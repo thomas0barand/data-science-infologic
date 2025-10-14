@@ -11,7 +11,7 @@ Predict which user is using the software based on their action traces.
 
 ## Session 1: Data Exploration
 
-### Person A - Data Loading
+### Anna - Data Loading
 - [ ] Load train.csv and test.csv files
 - [ ] Understand data structure (user_id, browser, actions)
 - [ ] Count sessions per user
@@ -49,17 +49,23 @@ Predict which user is using the software based on their action traces.
 
 ## Session 3: Model Building
 
-### Person A - Simple Models
-- [ ] Logistic Regression
+### Anna
 - [ ] Decision Tree
+- [ ] SVM
 - [ ] Compare results
 
-### Person B - Advanced Models
-- [ ] Random Forest
-- [ ] XGBoost
-- [ ] Tune parameters
+### Thomas
+- [ ] Logistic Regression
+- [ ] Linear Regression
+- [ ] Neural Network
+- [ ] Compare results
 
-### Person C - Evaluation
+### Nathan
+- [ ] NN 
+- [ ] XGBoost
+- [ ] Random Forest
+
+### Evaluation
 - [ ] Calculate F1-scores
 - [ ] Create confusion matrices
 - [ ] Select best model
