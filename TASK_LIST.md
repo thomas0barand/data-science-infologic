@@ -9,45 +9,19 @@ Predict which user is using the software based on their action traces.
 
 ---
 
-## Session 1: Data Exploration
+## Data Exploration : All
 
-### Anna - Data Loading
 - [ ] Load train.csv and test.csv files
 - [ ] Understand data structure (user_id, browser, actions)
 - [ ] Count sessions per user
-
-### Person B - Data Analysis  
 - [ ] Analyze browser usage patterns
 - [ ] Count different action types
 - [ ] Look at session lengths
-
-### Person C - Data Quality
 - [ ] Check for missing values
-- [ ] Find outliers
-- [ ] Document data issues
 
 ---
 
-## Session 2: Feature Engineering
-
-### Person A - Basic Features
-- [ ] Count total actions per session
-- [ ] Extract browser information
-- [ ] Create user frequency features
-
-### Person B - Action Features
-- [ ] Parse action types (buttons, screens, dialogs)
-- [ ] Extract screen information from parentheses
-- [ ] Count action frequencies
-
-### Person C - Advanced Features
-- [ ] Extract time patterns (t5, t10, t15 markers)
-- [ ] Parse screen configurations (<DEFAUT>, etc.)
-- [ ] Extract record chains ($AC$, $GP$)
-
----
-
-## Session 3: Model Building
+##Model Building
 
 ### Anna
 - [ ] Decision Tree
