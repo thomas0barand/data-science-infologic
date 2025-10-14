@@ -84,6 +84,12 @@ def extract_features(df, is_train=True):
     """
     Extract features from the raw action data.
     
+    These features are designed to capture USER BEHAVIOR PATTERNS:
+    - Activity level (how much they do)
+    - Work style (fast vs methodical, exploration vs focused)
+    - Preferred workflows and modules
+    - Interaction patterns (mouse vs keyboard, errors, etc.)
+    
     Args:
         df (pd.DataFrame): Cleaned dataframe
         is_train (bool): Whether this is training data
@@ -96,7 +102,11 @@ def extract_features(df, is_train=True):
     # Get action columns
     action_cols = [col for col in df.columns if col.startswith('action_')]
     
-    # Feature 1: Total number of non-null actions
+    # ============================================================================
+    # BASIC ACTIVITY FEATURES
+    # ============================================================================
+    
+    # Feature 1: Total number of non-null actions (activity level)
     features['num_actions'] = df[action_cols].notna().sum(axis=1)
     
     # Feature 2: Session duration (count time markers)
@@ -106,7 +116,16 @@ def extract_features(df, is_train=True):
     
     features['session_duration'] = df[action_cols].apply(count_time_markers, axis=1)
     
-    # Feature 3: Count specific action types
+    # Feature 3: Actions per time unit (work pace)
+    features['actions_per_time'] = features.apply(
+        lambda row: row['num_actions'] / row['session_duration'] if row['session_duration'] > 0 else 0,
+        axis=1
+    )
+    
+    # ============================================================================
+    # ACTION TYPE COUNTS (behavioral patterns)
+    # ============================================================================
+    
     def count_action_type(row, action_keyword):
         count = 0
         for val in row:
@@ -124,7 +143,55 @@ def extract_features(df, is_train=True):
     features['num_toast_display'] = df[action_cols].apply(lambda row: count_action_type(row, "Affichage d'un toast"), axis=1)
     features['num_filter_sort'] = df[action_cols].apply(lambda row: count_action_type(row, "Filtrage / Tri"), axis=1)
     
-    # Feature 4: Extract most common screen using regex pattern
+    # NEW: More specific action types
+    features['num_screen_selection'] = df[action_cols].apply(lambda row: count_action_type(row, "Sélection d'un écran"), axis=1)
+    features['num_tab_selection'] = df[action_cols].apply(lambda row: count_action_type(row, "Sélection d'un onglet"), axis=1)
+    features['num_errors'] = df[action_cols].apply(lambda row: count_action_type(row, "Affichage d'une erreur"), axis=1)
+    features['num_generic_actions'] = df[action_cols].apply(lambda row: count_action_type(row, "Lancement d'une action générique"), axis=1)
+    features['num_stats'] = df[action_cols].apply(lambda row: count_action_type(row, "Lancement d'une stat"), axis=1)
+    features['num_shortcuts'] = df[action_cols].apply(lambda row: count_action_type(row, "Raccourci"), axis=1)
+    features['num_table_actions'] = df[action_cols].apply(lambda row: count_action_type(row, "Action de table"), axis=1)
+    features['num_chaining'] = df[action_cols].apply(lambda row: count_action_type(row, "Chainage"), axis=1)
+    
+    # ============================================================================
+    # RATIO FEATURES (work style indicators)
+    # ============================================================================
+    
+    # Ratio of dialogs closed vs opened (organized vs messy)
+    features['dialog_close_ratio'] = features.apply(
+        lambda row: row['num_dialog_close'] / row['num_dialog_display'] if row['num_dialog_display'] > 0 else 0,
+        axis=1
+    )
+    
+    # Ratio of keyboard entry vs mouse clicks (power user indicator)
+    features['keyboard_vs_mouse'] = features.apply(
+        lambda row: row['num_field_entry'] / (row['num_button_exec'] + 1),  # +1 to avoid division by zero
+        axis=1
+    )
+    
+    # Error rate (user expertise level)
+    features['error_rate'] = features.apply(
+        lambda row: row['num_errors'] / row['num_actions'] if row['num_actions'] > 0 else 0,
+        axis=1
+    )
+    
+    # ============================================================================
+    # DIVERSITY FEATURES (exploration vs focused work)
+    # ============================================================================
+    
+    def count_unique_non_time_actions(row):
+        """Count how many different action types (not time markers) the user performs"""
+        actions = [str(val) for val in row if val and not str(val).startswith('t')]
+        unique_actions = set([action.split('(')[0].split('<')[0].split('$')[0] for action in actions])
+        return len(unique_actions)
+    
+    features['action_diversity'] = df[action_cols].apply(count_unique_non_time_actions, axis=1)
+    
+    # ============================================================================
+    # WORKFLOW & MODULE FEATURES (what they work on)
+    # ============================================================================
+    
+    # Extract most common screen using regex pattern
     pattern_ecran = re.compile(r"\((.*?)\)")
     
     def get_most_common_screen(row):
@@ -140,7 +207,18 @@ def extract_features(df, is_train=True):
     
     features['most_common_screen'] = df[action_cols].apply(get_most_common_screen, axis=1)
     
-    # Feature 5: Extract most common chain category using regex pattern
+    # Count unique screens used (module diversity)
+    def count_unique_screens(row):
+        screens = []
+        for val in row:
+            if val:
+                matches = pattern_ecran.findall(str(val))
+                screens.extend(matches)
+        return len(set(screens))
+    
+    features['num_unique_screens'] = df[action_cols].apply(count_unique_screens, axis=1)
+    
+    # Extract most common chain category using regex pattern
     pattern_chaine = re.compile(r"\$(.*?)\$")
     
     def get_most_common_chain(row):
@@ -156,13 +234,41 @@ def extract_features(df, is_train=True):
     
     features['most_common_chain'] = df[action_cols].apply(get_most_common_chain, axis=1)
     
-    # Feature 6: Browser type (one-hot encoding)
+    # Count unique chains (workflow diversity)
+    def count_unique_chains(row):
+        chains = []
+        for val in row:
+            if val:
+                matches = pattern_chaine.findall(str(val))
+                chains.extend(matches)
+        return len(set(chains))
+    
+    features['num_unique_chains'] = df[action_cols].apply(count_unique_chains, axis=1)
+    
+    # ============================================================================
+    # CONFIGURATION FEATURES
+    # ============================================================================
+    
+    # Browser type (one-hot encoding)
     browser_dummies = pd.get_dummies(df['browser'], prefix='browser')
     features = pd.concat([features, browser_dummies], axis=1)
     
-    # Feature 7: Actions per time unit (if session_duration > 0)
-    features['actions_per_time'] = features.apply(
-        lambda row: row['num_actions'] / row['session_duration'] if row['session_duration'] > 0 else 0,
+    # ============================================================================
+    # SEQUENCE FEATURES (action patterns over time)
+    # ============================================================================
+    
+    # First action in session (startup behavior)
+    def get_first_action(row):
+        for val in row:
+            if val and not str(val).startswith('t'):
+                return str(val).split('(')[0].split('<')[0].split('$')[0]
+        return "none"
+    
+    features['first_action'] = df[action_cols].apply(get_first_action, axis=1)
+    
+    # Average time between actions
+    features['avg_time_between_actions'] = features.apply(
+        lambda row: row['session_duration'] / row['num_actions'] if row['num_actions'] > 0 else 0,
         axis=1
     )
     
@@ -187,7 +293,8 @@ def prepare_training_data(df):
     y = user_id_cat.codes
     
     # Handle categorical features (convert to codes)
-    for col in ['most_common_screen', 'most_common_chain']:
+    categorical_cols = ['most_common_screen', 'most_common_chain', 'first_action']
+    for col in categorical_cols:
         if col in X.columns:
             X[col] = pd.Categorical(X[col]).codes
     
@@ -209,7 +316,8 @@ def prepare_test_data(df, train_features_columns):
     X = extract_features(df, is_train=False)
     
     # Handle categorical features (convert to codes)
-    for col in ['most_common_screen', 'most_common_chain']:
+    categorical_cols = ['most_common_screen', 'most_common_chain', 'first_action']
+    for col in categorical_cols:
         if col in X.columns:
             X[col] = pd.Categorical(X[col]).codes
     

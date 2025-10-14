@@ -45,21 +45,27 @@ def main():
     # Train Logistic Regression model (Linear model for classification)
     print("\n[5/6] Training Logistic Regression model...")
     print("   (Using Logistic Regression as it's a linear model suitable for classification)")
+    
+    # Scale features for better convergence
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    
     model = LogisticRegression(
-        max_iter=1000, 
+        max_iter=5000,  # Increased iterations for convergence
         random_state=42,
         solver='lbfgs',
-        multi_class='multinomial',
         n_jobs=-1,
         verbose=1
     )
-    model.fit(X_train, y_train)
+    model.fit(X_train_scaled, y_train)
     print("   ✓ Model trained successfully")
     
     # Evaluate on validation set
     print("\n[6/6] Evaluating model on validation set...")
-    y_pred_train = model.predict(X_train)
-    y_pred_val = model.predict(X_val)
+    y_pred_train = model.predict(X_train_scaled)
+    y_pred_val = model.predict(X_val_scaled)
     
     train_accuracy = accuracy_score(y_train, y_pred_train)
     val_accuracy = accuracy_score(y_val, y_pred_val)
@@ -96,6 +102,11 @@ def main():
     model_path = "linear_regression_model.joblib"
     joblib.dump(model, model_path)
     print(f"\nModel saved to: {model_path}")
+    
+    # Save scaler for test data preprocessing
+    scaler_path = "scaler.joblib"
+    joblib.dump(scaler, scaler_path)
+    print(f"Scaler saved to: {scaler_path}")
     
     # Save feature columns for later use with test data
     feature_columns_path = "feature_columns.joblib"
