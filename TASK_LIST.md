@@ -21,7 +21,7 @@ Predict which user is using the software based on their action traces.
 
 ---
 
-##Model Building
+## Model Building
 
 ### Anna
 - [ ] Decision Tree
@@ -29,12 +29,15 @@ Predict which user is using the software based on their action traces.
 - [ ] Compare results
 
 ### Thomas
-- [ ] Logistic Regression
+- [ ]  Data Vizualization
+- [x] Logistic Regression
 - [ ] Linear Regression
 - [ ] Neural Network
 - [ ] Compare results
 
+
 ### Nathan
+- [ ] Data Vizualization
 - [ ] NN 
 - [ ] XGBoost
 - [ ] Random Forest

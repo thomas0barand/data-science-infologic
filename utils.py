@@ -9,7 +9,7 @@ import re
 from collections import Counter
 
 
-def load_data(ds_name: str, data_dir: str = "data"):
+def load_data(ds_name: str, data_dir: str = "data", size: str = "full"):
     """
     Load a variable-column data file from CSV files in the /data folder.
     
@@ -24,7 +24,10 @@ def load_data(ds_name: str, data_dir: str = "data"):
     Args:
         ds_name (str): Dataset name ('train' or 'test')
         data_dir (str): Directory containing the data files
-        
+        size (str): Size of the dataset ('full' or 'small')
+            - 'full': Load all data
+            - 'small': For train data, load all rows for 20% of users
+                      For test data, load first 20% of rows
     Returns:
         pd.DataFrame: DataFrame with properly named columns and padded rows
     """
@@ -38,6 +41,29 @@ def load_data(ds_name: str, data_dir: str = "data"):
 
     # Split each line by comma delimiter
     split_lines = [line.split(",") for line in lines]
+    
+    # For training data with 'small' size, filter to 20% of users
+    if size == "small" and ds_name == "train":
+        # Extract user IDs (first column)
+        user_ids = [line[0] for line in split_lines]
+        
+        # Get unique users and sort for deterministic selection
+        unique_users = sorted(set(user_ids))
+        
+        # Select first 20% of users
+        num_users_to_select = max(1, int(len(unique_users) * 0.2))
+        selected_users = set(unique_users[:num_users_to_select])
+        
+        # Filter to keep only rows for selected users
+        split_lines = [line for line in split_lines if line[0] in selected_users]
+        
+        print(f"   ℹ️  Small dataset: Selected {num_users_to_select} out of {len(unique_users)} users (20%)")
+        print(f"   ℹ️  Total rows: {len(split_lines)}")
+    elif size == "small" and ds_name == "test":
+        # For test data, take first 20% of rows
+        num_rows = max(1, int(len(split_lines) * 0.2))
+        split_lines = split_lines[:num_rows]
+        print(f"   ℹ️  Small dataset: Selected {num_rows} out of {len(lines)} rows (20%)")
     
     # Find maximum number of columns for padding
     max_len = max(len(line) for line in split_lines)
@@ -330,4 +356,208 @@ def prepare_test_data(df, train_features_columns):
     X = X[train_features_columns]
     
     return X
+
+
+# ============================================================================
+# RNN SEQUENCE PREPROCESSING FUNCTIONS
+# ============================================================================
+
+def parse_action_string(action_str):
+    """
+    Parse action string to extract action type and its parameters.
+    
+    Returns a tuple containing (action, paren_content, angle_content) which
+    creates a unique signature for each action string pattern.
+    
+    Examples:
+        "Lancement d'une stat(infologic.core.gui.controllers.nested.homeview.InputFormHomeView)"
+        -> ("Lancement d'une stat", "infologic.core.gui.controllers.nested.homeview.InputFormHomeView", None)
+        
+        "Exécution d'un bouton<DEF_03/24>"
+        -> ("Exécution d'un bouton", None, "DEF_03/24")
+        
+        "Saisie dans un champ$JCP$"
+        -> ("Saisie dans un champ", None, None)
+    
+    Args:
+        action_str (str): Raw action string
+        
+    Returns:
+        tuple: (action, paren_content, angle_content)
+            - action (str): Base action type without parameters
+            - paren_content (str or None): Content inside parentheses ()
+            - angle_content (str or None): Content inside angle brackets <>
+    """
+    if not action_str or pd.isna(action_str):
+        return (None, None, None)
+    
+    action_str = str(action_str)
+    
+    # Extract content in parentheses
+    paren_match = re.search(r'\(([^)]*)\)', action_str)
+    paren_content = paren_match.group(1) if paren_match else None
+    
+    # Extract content in angle brackets
+    angle_match = re.search(r'<([^>]*)>', action_str)
+    angle_content = angle_match.group(1) if angle_match else None
+    
+    # Extract base action by removing parentheses, angle brackets, and $ content
+    action = re.sub(r'\([^)]*\)', '', action_str)
+    action = re.sub(r'<[^>]*>', '', action)
+    action = re.sub(r'\$[^$]*\$', '', action)
+    action = action.strip()
+    
+    return (action if action else None, paren_content, angle_content)
+
+
+def tokenize_actions(df, is_train=True, vocabulary=None):
+    """
+    Tokenize action sequences from dataframe.
+    
+    Extracts actions, removes time markers, parses action strings,
+    and builds/uses vocabulary for integer encoding.
+    
+    Each action is represented as a tuple (action, paren_content, angle_content)
+    which creates a unique signature for each distinct action pattern.
+    
+    Args:
+        df (pd.DataFrame): Dataframe with action columns
+        is_train (bool): Whether this is training data
+        vocabulary (dict): Existing vocabulary (for test data)
+        
+    Returns:
+        tuple: (sequences, vocabulary)
+            - sequences: List of lists of action tuples (action, paren_content, angle_content)
+            - vocabulary: Dict mapping action tuple -> integer ID
+    """
+    # Get action columns
+    action_cols = [col for col in df.columns if col.startswith('action_')]
+    
+    # Convert action columns to numpy array for faster processing
+    actions_array = df[action_cols].values
+    
+    sequences = []
+    all_actions = set() if is_train else None
+    
+    # Process each row using numpy array (much faster than iterrows)
+    for row in actions_array:
+        sequence = []
+        for action in row:
+            # Skip None/NaN values
+            if pd.isna(action) or action is None:
+                continue
+            
+            action_str = str(action)
+            
+            # Skip time markers (t5, t10, t15, etc.)
+            if action_str.startswith('t') and len(action_str) > 1 and action_str[1:].replace('.', '').isdigit():
+                continue
+            
+            # Parse action to extract base type
+            parsed_result = parse_action_string(action_str)
+            parsed_action = parsed_result if parsed_result else None
+            
+            if parsed_action:
+                sequence.append(parsed_action)
+                if is_train:
+                    all_actions.add(parsed_action)
+        
+        sequences.append(sequence)
+    
+    # Build or use vocabulary
+    if is_train:
+        # Reserve 0 for padding, 1 for unknown
+        vocabulary = {'<PAD>': 0, '<UNK>': 1}
+        # Sort tuples with custom key to handle None values
+        # Sort by: (action or '', paren_content or '', angle_content or '')
+        sorted_actions = sorted(all_actions, key=lambda x: (x[0] or '', x[1] or '', x[2] or ''))
+        for action in sorted_actions:
+            vocabulary[action] = len(vocabulary)
+    elif vocabulary is None:
+        raise ValueError("Vocabulary must be provided for test data")
+    
+    return sequences, vocabulary
+
+
+def encode_browser(df):
+    """
+    One-hot encode browser information.
+    
+    Args:
+        df (pd.DataFrame): Dataframe with 'browser' column
+        
+    Returns:
+        np.ndarray: One-hot encoded browser features (N x num_browsers)
+    """
+    # Get unique browsers and create encoding
+    browser_dummies = pd.get_dummies(df['browser'], prefix='browser')
+    
+    # Ensure all expected browsers are present
+    expected_browsers = ['browser_Firefox', 'browser_Google Chrome', 
+                        'browser_Microsoft Edge', 'browser_Opera']
+    
+    for browser in expected_browsers:
+        if browser not in browser_dummies.columns:
+            browser_dummies[browser] = 0
+    
+    # Reorder columns consistently
+    browser_dummies = browser_dummies[expected_browsers]
+    
+    return browser_dummies.values
+
+
+def prepare_rnn_sequences(df, vocabulary, max_length=1000, is_train=True):
+    """
+    Prepare sequences for RNN training/prediction.
+    
+    Tokenizes actions, truncates to max_length, pads shorter sequences,
+    and encodes browser information.
+    
+    Each action is represented as a unique tuple signature (action, paren_content, angle_content)
+    for more granular vocabulary.
+    
+    Args:
+        df (pd.DataFrame): Dataframe with actions and browser
+        vocabulary (dict): Action tuple to ID mapping
+        max_length (int): Maximum sequence length (default: 1000)
+        is_train (bool): Whether this is training data
+        
+    Returns:
+        tuple: (sequences, browser_features, targets, user_categories)
+            - sequences: np.ndarray of shape (N, max_length) with action IDs
+            - browser_features: np.ndarray of shape (N, num_browsers)
+            - targets: np.ndarray of shape (N,) with user IDs (if train)
+            - user_categories: Categorical mapping of users (if train)
+    """
+    # Tokenize actions
+    action_sequences, _ = tokenize_actions(df, is_train=False, vocabulary=vocabulary)
+    
+    # Pre-allocate numpy array for better performance
+    num_samples = len(action_sequences)
+    sequences = np.zeros((num_samples, max_length), dtype=np.int32)
+    pad_id = vocabulary['<PAD>']
+    unk_id = vocabulary['<UNK>']
+    
+    # Convert to integer IDs and pad/truncate
+    for i, sequence in enumerate(action_sequences):
+        # Convert actions to IDs using list comprehension (faster)
+        id_sequence = [vocabulary.get(action, unk_id) for action in sequence]
+        
+        # Truncate if too long (keep most recent actions)
+        if len(id_sequence) > max_length:
+            id_sequence = id_sequence[-max_length:]
+        
+        # Copy to pre-allocated array (already padded with zeros)
+        sequences[i, :len(id_sequence)] = id_sequence
+    
+    # Encode browser information
+    browser_features = encode_browser(df)
+    
+    # Get targets if training data
+    if is_train and 'user_id' in df.columns:
+        user_id_cat = pd.Categorical(df['user_id'])
+        targets = np.array(user_id_cat.codes, dtype=np.int64)
+        return sequences, browser_features, targets, user_id_cat
+    else:
+        return sequences, browser_features, None, None
 

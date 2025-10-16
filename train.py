@@ -4,10 +4,12 @@ Training script for Copilote user identification using Linear Regression.
 
 import pandas as pd
 import numpy as np
+import os
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 from utils import load_data, clean_data, prepare_training_data, prepare_test_data
+from model_manager import ModelManager, save_model_results
 
 
 def main():
@@ -67,19 +69,20 @@ def main():
     y_pred_train = model.predict(X_train_scaled)
     y_pred_val = model.predict(X_val_scaled)
     
-    train_accuracy = accuracy_score(y_train, y_pred_train)
-    val_accuracy = accuracy_score(y_val, y_pred_val)
-    
-    train_f1 = f1_score(y_train, y_pred_train, average='weighted')
-    val_f1 = f1_score(y_val, y_pred_val, average='weighted')
+    # Calculate comprehensive metrics using ModelManager
+    manager = ModelManager()
+    train_metrics = manager.calculate_comprehensive_metrics(y_train, y_pred_train)
+    val_metrics = manager.calculate_comprehensive_metrics(y_val, y_pred_val)
     
     print(f"\n   Training Metrics:")
-    print(f"   • Accuracy: {train_accuracy:.4f}")
-    print(f"   • F1-Score (weighted): {train_f1:.4f}")
+    print(f"   • Accuracy: {train_metrics['accuracy']:.4f}")
+    print(f"   • F1-Score (weighted): {train_metrics['f1_weighted']:.4f}")
+    print(f"   • F1-Score (macro): {train_metrics['f1_score']:.4f}")
     
     print(f"\n   Validation Metrics:")
-    print(f"   • Accuracy: {val_accuracy:.4f}")
-    print(f"   • F1-Score (weighted): {val_f1:.4f}")
+    print(f"   • Accuracy: {val_metrics['accuracy']:.4f}")
+    print(f"   • F1-Score (weighted): {val_metrics['f1_weighted']:.4f}")
+    print(f"   • F1-Score (macro): {val_metrics['f1_score']:.4f}")
     
     # Show top features (if available)
     if hasattr(model, 'coef_'):
@@ -97,26 +100,57 @@ def main():
     print("Training completed successfully!")
     print("=" * 80)
     
-    # Save model (optional)
-    import joblib
-    model_path = "linear_regression_model.joblib"
-    joblib.dump(model, model_path)
-    print(f"\nModel saved to: {model_path}")
+    # Save model and metrics using the new system
+    print("\n[7/7] Saving model and metrics...")
     
-    # Save scaler for test data preprocessing
-    scaler_path = "scaler.joblib"
-    joblib.dump(scaler, scaler_path)
-    print(f"Scaler saved to: {scaler_path}")
+    # Prepare additional metadata
+    additional_metadata = {
+        "num_features": X.shape[1],
+        "num_classes": len(np.unique(y)),
+        "train_samples": len(X_train),
+        "val_samples": len(X_val),
+        "feature_names": list(X.columns),
+        "model_params": {
+            "max_iter": 5000,
+            "solver": "lbfgs",
+            "random_state": 42
+        }
+    }
     
-    # Save feature columns for later use with test data
-    feature_columns_path = "feature_columns.joblib"
-    joblib.dump(list(X.columns), feature_columns_path)
-    print(f"Feature columns saved to: {feature_columns_path}")
+    # Save using the new model management system
+    model_path, metrics_path = save_model_results(
+        model=model,
+        model_type="logistic_regression",
+        train_metrics=train_metrics,
+        val_metrics=val_metrics,
+        scaler=scaler,
+        feature_columns=list(X.columns),
+        user_categories=user_categories,
+        additional_metadata=additional_metadata
+    )
     
-    # Save user categories for later prediction conversion
-    user_categories_path = "user_categories.joblib"
-    joblib.dump(user_categories, user_categories_path)
-    print(f"User categories saved to: {user_categories_path}")
+    print(f"   ✓ Model saved to: {model_path}")
+    print(f"   ✓ Metrics saved to: {metrics_path}")
+    
+    # Create and display results summary
+    print("\n" + "=" * 80)
+    print("RESULTS SUMMARY")
+    print("=" * 80)
+    
+    # Get the model name from the path
+    model_name = os.path.basename(os.path.dirname(model_path))
+    summary = manager.get_model_summary(model_name)
+    
+    if summary["status"] == "complete":
+        print(f"Model Name: {model_name}")
+        print(f"Model Type: {summary['metadata']['model_type']}")
+        print(f"Timestamp: {summary['metadata']['timestamp']}")
+        print(f"Training Accuracy: {summary['metrics']['train_metrics']['accuracy']:.4f}")
+        print(f"Validation Accuracy: {summary['metrics']['validation_metrics']['accuracy']:.4f}")
+        print(f"Training F1 (weighted): {summary['metrics']['train_metrics']['f1_weighted']:.4f}")
+        print(f"Validation F1 (weighted): {summary['metrics']['validation_metrics']['f1_weighted']:.4f}")
+    
+    print("=" * 80)
     
     return model, X, y
 
