@@ -3,5 +3,4 @@ data/
 outputs/
 logs/
 models/
-results/
 __pycache__/

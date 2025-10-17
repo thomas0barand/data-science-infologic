@@ -135,11 +135,11 @@ def create_data_loaders_with_features(sequences, browser_features, stat_features
 
 
 def save_results_to_json(config, model, train_metrics, val_metrics, vocab_size,
-                         num_users, checkpoint_path, output_dir):
+                         num_users, checkpoint_path, output_dir, model_name=None):
     """Save training results and metrics to JSON file."""
     results = {
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'model_name': 'attention_lstm_user_classifier',
+        'model_name': model_name if model_name else 'attention_lstm_user_classifier',
         'config': OmegaConf.to_container(config, resolve=True),
         'data': {
             'vocab_size': vocab_size,
@@ -175,11 +175,17 @@ def save_results_to_json(config, model, train_metrics, val_metrics, vocab_size,
         }
     }
     
-    # Save to JSON
+    # Save to JSON with model name
     os.makedirs(config.paths.metrics_dir, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    json_path = os.path.join(config.paths.metrics_dir, 
-                            f'attention_lstm_{timestamp}_metrics.json')
+    
+    # Use model_name if provided, otherwise use timestamp
+    if model_name and model_name != 'attention_lstm_user_classifier':
+        json_filename = f'{model_name}_metrics.json'
+    else:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        json_filename = f'attention_lstm_{timestamp}_metrics.json'
+    
+    json_path = os.path.join(config.paths.metrics_dir, json_filename)
     
     with open(json_path, 'w') as f:
         json.dump(results, f, indent=2)
@@ -193,7 +199,10 @@ def parse_custom_args():
     """
     Parse custom command-line arguments before Hydra processes them.
     Converts -c config_name to Hydra's --config-name format.
+    Returns the config name for use in folder naming.
     """
+    config_name = None
+    
     # Check if -c argument is present
     if '-c' in sys.argv:
         idx = sys.argv.index('-c')
@@ -204,8 +213,24 @@ def parse_custom_args():
             sys.argv.pop(idx)  # Remove config_name
             # Add Hydra format
             sys.argv.append(f'--config-name={config_name}')
-            return config_name
-    return None
+    
+    # Check if --config-name is present
+    elif any(arg.startswith('--config-name=') for arg in sys.argv):
+        for arg in sys.argv:
+            if arg.startswith('--config-name='):
+                config_name = arg.split('=')[1]
+                break
+    
+    # If no config name found, check Hydra's default
+    if config_name is None:
+        # Will use default from decorator
+        config_name = "config_attention"
+    
+    return config_name
+
+
+# Global variable to store config name
+_CONFIG_NAME = None
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config_attention")
@@ -216,12 +241,21 @@ def main(config: DictConfig):
     Args:
         config: Hydra configuration object
     """
+    global _CONFIG_NAME
+    
     print("=" * 80)
     print("Attention-LSTM User Identification - PyTorch Lightning + Hydra")
     print("=" * 80)
     
-    # Display which config is being used
-    config_name = config.get('_name_', 'config_attention')
+    # Get configuration name from Hydra runtime or global variable
+    try:
+        from hydra.core.hydra_config import HydraConfig
+        hydra_cfg = HydraConfig.get()
+        config_name = hydra_cfg.job.config_name
+    except:
+        # Fallback to global variable set during arg parsing
+        config_name = _CONFIG_NAME if _CONFIG_NAME else "config_attention"
+    
     print(f"\n🔧 Using configuration: {config_name}")
     
     # Print configuration
@@ -318,12 +352,30 @@ def main(config: DictConfig):
     print("[6/7] Initializing Attention-LSTM model...")
     print("=" * 80)
     
-    # Create output directory
+    # Create output directory with config name
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    model_name = f"attention_lstm_{timestamp}"
+    
+    # Extract config identifier (remove 'config_attention_' prefix if present)
+    try:
+        from hydra.core.hydra_config import HydraConfig
+        hydra_cfg = HydraConfig.get()
+        config_name = hydra_cfg.job.config_name
+    except:
+        config_name = _CONFIG_NAME if _CONFIG_NAME else "config_attention"
+    
+    # Extract suffix from config name (e.g., 'large' from 'config_attention_large')
+    if config_name.startswith('config_attention_'):
+        config_suffix = config_name.replace('config_attention_', '')
+        model_name = f"attention_lstm_{config_suffix}_{timestamp}"
+    elif config_name == 'config_attention':
+        model_name = f"attention_lstm_baseline_{timestamp}"
+    else:
+        model_name = f"attention_lstm_{config_name}_{timestamp}"
+    
     output_dir = os.path.join(config.paths.output_dir, model_name)
     os.makedirs(output_dir, exist_ok=True)
     print(f"✓ Output directory: {output_dir}")
+    print(f"✓ Model identifier: {model_name}")
     
     # Initialize model
     stat_feature_dim = X_stat.shape[1]
@@ -493,10 +545,11 @@ def main(config: DictConfig):
     for metric, value in val_metrics.items():
         print(f"  • {metric}: {value:.4f}")
     
-    # Save results to JSON
+    # Save results to JSON with model name
     json_path = save_results_to_json(
         config, best_model, train_metrics, val_metrics,
-        vocab_size, num_users, checkpoint_callback.best_model_path, output_dir
+        vocab_size, num_users, checkpoint_callback.best_model_path, output_dir,
+        model_name=model_name
     )
     
     # Save artifacts
@@ -527,9 +580,9 @@ def main(config: DictConfig):
 
 if __name__ == "__main__":
     # Parse custom -c argument if present
-    config_name = parse_custom_args()
-    if config_name:
-        print(f"📝 Custom config specified: {config_name}")
+    _CONFIG_NAME = parse_custom_args()
+    if _CONFIG_NAME:
+        print(f"📝 Custom config specified: {_CONFIG_NAME}")
     
     # Run Hydra main
     main()
