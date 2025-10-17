@@ -277,8 +277,7 @@ class AttentionLSTMClassifier(pl.LightningModule):
                 mode=self.config.scheduler.reduce_on_plateau.mode,
                 factor=self.config.scheduler.reduce_on_plateau.factor,
                 patience=self.config.scheduler.reduce_on_plateau.patience,
-                min_lr=self.config.scheduler.reduce_on_plateau.min_lr,
-                verbose=True
+                min_lr=self.config.scheduler.reduce_on_plateau.min_lr
             )
             return {
                 'optimizer': optimizer,
