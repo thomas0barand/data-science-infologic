@@ -1,0 +1,104 @@
+# Hydra Configuration for Attention-LSTM User Identification
+# LARGE MODEL: Higher capacity with larger embedding and hidden dimensions
+# Goal: Capture more complex patterns in user behavior
+
+# Random seed for reproducibility
+seed: 42
+
+# Data configuration
+data:
+  train_path: "train"
+  test_path: "test"
+  data_dir: "data"
+  size: "full"
+  max_sequence_length: 5000
+  train_split: 0.8
+  batch_size: 12  # Reduced due to larger model
+  num_workers: 7
+
+# Model architecture - LARGER CAPACITY
+model:
+  # Embedding and LSTM - INCREASED DIMENSIONS
+  embedding_dim: 256  # Increased from 128
+  hidden_size: 512    # Increased from 256
+  num_layers: 3       # Increased from 2
+  dropout: 0.4        # Increased dropout for larger model
+  bidirectional: true
+  
+  # Attention mechanism
+  attention_dim: 256  # Increased from 128
+  
+  # Feature fusion
+  fusion_hidden_size: 1024  # Increased from 512
+
+# Training configuration
+training:
+  max_epochs: 50
+  accelerator: "auto"
+  devices: 1
+  precision: "32"
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 2  # Gradient accumulation for larger model
+  
+  # Loss function
+  use_focal_loss: false
+  use_class_weights: true
+  
+  # Focal loss parameters
+  focal_loss:
+    gamma: 2.0
+    alpha_mode: "balanced"
+  
+  # Early stopping
+  early_stopping:
+    monitor: "val_f1"
+    patience: 12  # Reduced patience for larger model
+    mode: "max"
+    min_delta: 0.001
+  
+  # Checkpointing
+  checkpoint:
+    monitor: "val_f1"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "epoch={epoch:02d}-val_f1={val_f1:.4f}"
+
+# Optimizer configuration
+optimizer:
+  name: "adam"
+  lr: 0.0003  # Lower learning rate for larger model
+  weight_decay: 0.0002  # Increased weight decay
+
+# Learning rate scheduler
+scheduler:
+  name: "reduce_on_plateau"
+  
+  reduce_on_plateau:
+    monitor: "val_f1"
+    factor: 0.5
+    patience: 4
+    min_lr: 0.00001
+    mode: "max"
+  
+  cosine:
+    T_max: 20
+    eta_min: 0.00001
+  
+  step:
+    step_size: 10
+    gamma: 0.5
+
+# Paths for saving results
+paths:
+  output_dir: "results/rnn_models"
+  logs_dir: "logs"
+  metrics_dir: "results/metrics"
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  job:
+    chdir: false
+

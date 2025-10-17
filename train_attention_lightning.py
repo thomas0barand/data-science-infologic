@@ -6,11 +6,17 @@ Enhanced training pipeline with:
 - Statistical feature fusion
 - Class imbalance handling (focal loss + class weights)
 - Advanced metrics tracking
+
+Usage:
+    python train_attention_lightning.py -c config_attention_large
+    python train_attention_lightning.py --config-name config_attention_deep
 """
 
 import os
+import sys
 import json
 from datetime import datetime
+import argparse
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import torch
@@ -183,6 +189,25 @@ def save_results_to_json(config, model, train_metrics, val_metrics, vocab_size,
     return json_path
 
 
+def parse_custom_args():
+    """
+    Parse custom command-line arguments before Hydra processes them.
+    Converts -c config_name to Hydra's --config-name format.
+    """
+    # Check if -c argument is present
+    if '-c' in sys.argv:
+        idx = sys.argv.index('-c')
+        if idx + 1 < len(sys.argv):
+            config_name = sys.argv[idx + 1]
+            # Remove -c and its value from sys.argv
+            sys.argv.pop(idx)  # Remove -c
+            sys.argv.pop(idx)  # Remove config_name
+            # Add Hydra format
+            sys.argv.append(f'--config-name={config_name}')
+            return config_name
+    return None
+
+
 @hydra.main(version_base=None, config_path="config", config_name="config_attention")
 def main(config: DictConfig):
     """
@@ -194,6 +219,10 @@ def main(config: DictConfig):
     print("=" * 80)
     print("Attention-LSTM User Identification - PyTorch Lightning + Hydra")
     print("=" * 80)
+    
+    # Display which config is being used
+    config_name = config.get('_name_', 'config_attention')
+    print(f"\n🔧 Using configuration: {config_name}")
     
     # Print configuration
     print("\n📋 Configuration:")
@@ -497,5 +526,11 @@ def main(config: DictConfig):
 
 
 if __name__ == "__main__":
+    # Parse custom -c argument if present
+    config_name = parse_custom_args()
+    if config_name:
+        print(f"📝 Custom config specified: {config_name}")
+    
+    # Run Hydra main
     main()
 

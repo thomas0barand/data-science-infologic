@@ -10,7 +10,7 @@ data:
   test_path: "test"
   data_dir: "data"
   size: "full"  # HOTFIX: Use small for debugging
-  max_sequence_length: 1000  # HOTFIX: Reduced for faster training and stability
+  max_sequence_length: 5000  # HOTFIX: Reduced for faster training and stability
   train_split: 0.8
   batch_size: 16  # HOTFIX: Reduced for stability
   num_workers: 7  # HOTFIX: Enabled for faster data loading
