@@ -503,7 +503,8 @@ def encode_browser(df):
     # Reorder columns consistently
     browser_dummies = browser_dummies[expected_browsers]
     
-    return browser_dummies.values
+    # Convert to float32 to ensure proper dtype for PyTorch
+    return browser_dummies.values.astype(np.float32)
 
 
 def prepare_rnn_sequences(df, vocabulary, max_length=1000, is_train=True):
@@ -560,4 +561,176 @@ def prepare_rnn_sequences(df, vocabulary, max_length=1000, is_train=True):
         return sequences, browser_features, targets, user_id_cat
     else:
         return sequences, browser_features, None, None
+
+
+def extract_statistical_features(df, action_sequences=None):
+    """
+    Extract statistical behavioral features for deep learning models.
+    
+    These features capture user behavior patterns that complement
+    sequence-based learning. Designed to be used alongside RNN/LSTM models.
+    
+    Args:
+        df (pd.DataFrame): Dataframe with actions and browser
+        action_sequences (list, optional): Pre-computed action sequences to avoid recomputation
+        
+    Returns:
+        np.ndarray: Statistical features of shape (N, num_features)
+    """
+    # Get action columns
+    action_cols = [col for col in df.columns if col.startswith('action_')]
+    
+    features_list = []
+    
+    # ============================================================================
+    # BASIC ACTIVITY METRICS
+    # ============================================================================
+    
+    # 1. Number of actions
+    num_actions = df[action_cols].notna().sum(axis=1).values
+    features_list.append(num_actions.reshape(-1, 1))
+    
+    # 2. Session duration (time markers)
+    def count_time_markers(row):
+        return sum(1 for val in row if val and str(val).startswith('t'))
+    
+    session_duration = df[action_cols].apply(count_time_markers, axis=1).values
+    features_list.append(session_duration.reshape(-1, 1))
+    
+    # 3. Actions per time unit (work pace)
+    actions_per_time = np.divide(num_actions, session_duration, 
+                                  out=np.zeros_like(num_actions, dtype=float), 
+                                  where=session_duration != 0)
+    features_list.append(actions_per_time.reshape(-1, 1))
+    
+    # ============================================================================
+    # ACTION TYPE COUNTS
+    # ============================================================================
+    
+    def count_action_keyword(rows, keyword):
+        counts = []
+        for row in rows:
+            count = sum(1 for val in row if val and keyword in str(val))
+            counts.append(count)
+        return np.array(counts)
+    
+    actions_array = df[action_cols].values
+    
+    # Count various action types
+    action_keywords = [
+        "Exécution d'un bouton",
+        "Affichage d'une dialogue",
+        "Fermeture d'une dialogue",
+        "Saisie dans un champ",
+        "Double-clic",
+        "Sélection d'un écran",
+        "Sélection d'un onglet",
+        "Affichage d'une erreur",
+        "Lancement d'une action générique",
+        "Raccourci",
+        "Filtrage / Tri"
+    ]
+    
+    for keyword in action_keywords:
+        counts = count_action_keyword(actions_array, keyword)
+        features_list.append(counts.reshape(-1, 1))
+    
+    # ============================================================================
+    # BEHAVIORAL RATIOS
+    # ============================================================================
+    
+    # Dialog close ratio (organized vs messy)
+    dialog_open = count_action_keyword(actions_array, "Affichage d'une dialogue")
+    dialog_close = count_action_keyword(actions_array, "Fermeture d'une dialogue")
+    dialog_ratio = np.divide(dialog_close, dialog_open,
+                            out=np.zeros_like(dialog_close, dtype=float),
+                            where=dialog_open != 0)
+    features_list.append(dialog_ratio.reshape(-1, 1))
+    
+    # Keyboard vs mouse ratio (power user indicator)
+    field_entry = count_action_keyword(actions_array, "Saisie dans un champ")
+    button_exec = count_action_keyword(actions_array, "Exécution d'un bouton")
+    kb_mouse_ratio = field_entry / (button_exec + 1)
+    features_list.append(kb_mouse_ratio.reshape(-1, 1))
+    
+    # Error rate
+    errors = count_action_keyword(actions_array, "Affichage d'une erreur")
+    error_rate = np.divide(errors, num_actions,
+                          out=np.zeros_like(errors, dtype=float),
+                          where=num_actions != 0)
+    features_list.append(error_rate.reshape(-1, 1))
+    
+    # ============================================================================
+    # DIVERSITY METRICS
+    # ============================================================================
+    
+    # Action diversity (unique action types)
+    def compute_action_diversity(row):
+        actions = [str(val).split('(')[0].split('<')[0].split('$')[0] 
+                  for val in row if val and not str(val).startswith('t')]
+        return len(set(actions))
+    
+    action_diversity = df[action_cols].apply(compute_action_diversity, axis=1).values
+    features_list.append(action_diversity.reshape(-1, 1))
+    
+    # Screen diversity (unique screens used)
+    pattern_screen = re.compile(r"\((.*?)\)")
+    
+    def count_unique_screens(row):
+        screens = []
+        for val in row:
+            if val:
+                screens.extend(pattern_screen.findall(str(val)))
+        return len(set(screens))
+    
+    screen_diversity = df[action_cols].apply(count_unique_screens, axis=1).values
+    features_list.append(screen_diversity.reshape(-1, 1))
+    
+    # ============================================================================
+    # TIMING PATTERNS
+    # ============================================================================
+    
+    # Average time between actions
+    avg_time_between = np.divide(session_duration, num_actions,
+                                 out=np.zeros_like(session_duration, dtype=float),
+                                 where=num_actions != 0)
+    features_list.append(avg_time_between.reshape(-1, 1))
+    
+    # ============================================================================
+    # SEQUENCE PATTERNS (if action_sequences provided)
+    # ============================================================================
+    
+    if action_sequences is not None:
+        # Sequence length (actual non-padded length)
+        seq_lengths = np.array([len(seq) for seq in action_sequences])
+        features_list.append(seq_lengths.reshape(-1, 1))
+        
+        # Action bigram diversity (unique consecutive action pairs)
+        def count_bigrams(seq):
+            if len(seq) < 2:
+                return 0
+            bigrams = set(zip(seq[:-1], seq[1:]))
+            return len(bigrams)
+        
+        bigram_diversity = np.array([count_bigrams(seq) for seq in action_sequences])
+        features_list.append(bigram_diversity.reshape(-1, 1))
+    
+    # ============================================================================
+    # COMBINE ALL FEATURES
+    # ============================================================================
+    
+    # Stack all features horizontally
+    statistical_features = np.hstack(features_list).astype(np.float32)
+    
+    # HOTFIX: Handle any NaN or inf values
+    statistical_features = np.nan_to_num(statistical_features, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # HOTFIX: Additional check - replace any remaining extreme values
+    statistical_features = np.clip(statistical_features, -1e6, 1e6)
+    
+    # Debug: Print if any issues found
+    if np.isnan(statistical_features).any() or np.isinf(statistical_features).any():
+        print("⚠️  Warning: NaN/Inf found in statistical features after cleaning!")
+    
+    return statistical_features
 

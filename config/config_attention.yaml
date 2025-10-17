@@ -1,0 +1,106 @@
+# Hydra Configuration for Attention-LSTM User Identification
+# Enhanced architecture with attention mechanism and feature fusion
+
+# Random seed for reproducibility
+seed: 42
+
+# Data configuration
+data:
+  train_path: "train"
+  test_path: "test"
+  data_dir: "data"
+  size: "full"  # HOTFIX: Use small for debugging
+  max_sequence_length: 1000  # HOTFIX: Reduced for faster training and stability
+  train_split: 0.8
+  batch_size: 32  # HOTFIX: Reduced for stability
+  num_workers: 7  # HOTFIX: Enabled for faster data loading
+
+# Model architecture
+model:
+  # Embedding and LSTM
+  embedding_dim: 128
+  hidden_size: 256
+  num_layers: 2
+  dropout: 0.3  # Reduced dropout for better feature learning
+  bidirectional: true
+  
+  # Attention mechanism
+  attention_dim: 128
+  
+  # Feature fusion
+  fusion_hidden_size: 512  # Hidden layer size for fusion network
+
+# Training configuration
+training:
+  max_epochs: 50  # Increased for better convergence
+  accelerator: "auto"  # "auto", "gpu", "cpu", "mps"
+  devices: 1
+  precision: "32"
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  
+  # Loss function - HOTFIX: Disabled focal loss to prevent NaN
+  use_focal_loss: false  # Disabled - causing NaN issues
+  use_class_weights: true  # Keep basic class weighting
+  
+  # Focal loss parameters (if use_focal_loss=true)
+  focal_loss:
+    gamma: 2.0  # Focusing parameter (higher = more focus on hard examples)
+    alpha_mode: "balanced"  # "balanced" or "none"
+  
+  # Early stopping
+  early_stopping:
+    monitor: "val_f1"  # Monitor F1 score instead of loss
+    patience: 15  # Increased patience for attention model
+    mode: "max"
+    min_delta: 0.001
+  
+  # Checkpointing
+  checkpoint:
+    monitor: "val_f1"  # Save best F1 model
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "epoch={epoch:02d}-val_f1={val_f1:.4f}"
+
+# Optimizer configuration
+optimizer:
+  name: "adam"  # Changed to Adam (more stable than AdamW)
+  lr: 0.0005  # HOTFIX: Reduced from 0.0005 to prevent gradient explosion
+  weight_decay: 0.0001  # Reduced weight decay
+
+# Learning rate scheduler
+scheduler:
+  name: "reduce_on_plateau"
+  
+  # ReduceLROnPlateau parameters
+  reduce_on_plateau:
+    monitor: "val_f1"  # Monitor F1 instead of loss
+    factor: 0.5
+    patience: 5
+    min_lr: 0.00001
+    mode: "max"  # Maximize F1
+  
+  # CosineAnnealing parameters (alternative)
+  cosine:
+    T_max: 20
+    eta_min: 0.00001
+  
+  # StepLR parameters (alternative)
+  step:
+    step_size: 10
+    gamma: 0.5
+
+# Paths for saving results
+paths:
+  output_dir: "results/rnn_models"
+  logs_dir: "logs"
+  metrics_dir: "results/metrics"
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  job:
+    chdir: false
+
