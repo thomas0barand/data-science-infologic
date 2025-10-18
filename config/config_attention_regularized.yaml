@@ -95,14 +95,6 @@ paths:
   logs_dir: "logs"
   metrics_dir: "results/metrics"
 
-# GitHub auto-save configuration
-github_autosave:
-  enabled: true  # Enable/disable GitHub auto-save
-  mode: "end_of_training"  # "each_epoch" or "end_of_training" (recommended)
-  push_to_remote: true  # Push to GitHub after commit
-  include_checkpoints: false  # Include .ckpt files (not recommended - large files)
-  results_dir: "results"  # Directory to commit
-
 # Hydra configuration
 hydra:
   run:
