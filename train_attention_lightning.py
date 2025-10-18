@@ -6,10 +6,18 @@ Enhanced training pipeline with:
 - Statistical feature fusion
 - Class imbalance handling (focal loss + class weights)
 - Advanced metrics tracking
+- Automatic checkpoint resume (if training is interrupted)
 
 Usage:
+    # Train with specific config
     python train_attention_lightning.py -c config_attention_large
     python train_attention_lightning.py --config-name config_attention_deep
+    
+    # Resume training automatically (if interrupted)
+    python train_attention_lightning.py -c config_attention_large
+    
+    # Force fresh training (ignore existing checkpoints)
+    python train_attention_lightning.py -c config_attention_large --fresh
 """
 
 import os
@@ -199,9 +207,10 @@ def parse_custom_args():
     """
     Parse custom command-line arguments before Hydra processes them.
     Converts -c config_name to Hydra's --config-name format.
-    Returns the config name for use in folder naming.
+    Returns the config name and force_fresh flag.
     """
     config_name = None
+    force_fresh = False
     
     # Check if -c argument is present
     if '-c' in sys.argv:
@@ -221,16 +230,22 @@ def parse_custom_args():
                 config_name = arg.split('=')[1]
                 break
     
+    # Check for --fresh flag to force new training
+    if '--fresh' in sys.argv:
+        sys.argv.remove('--fresh')
+        force_fresh = True
+    
     # If no config name found, check Hydra's default
     if config_name is None:
         # Will use default from decorator
         config_name = "config_attention"
     
-    return config_name
+    return config_name, force_fresh
 
 
-# Global variable to store config name
+# Global variables
 _CONFIG_NAME = None
+_FORCE_FRESH = False
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config_attention")
@@ -241,7 +256,7 @@ def main(config: DictConfig):
     Args:
         config: Hydra configuration object
     """
-    global _CONFIG_NAME
+    global _CONFIG_NAME, _FORCE_FRESH
     
     print("=" * 80)
     print("Attention-LSTM User Identification - PyTorch Lightning + Hydra")
@@ -257,6 +272,8 @@ def main(config: DictConfig):
         config_name = _CONFIG_NAME if _CONFIG_NAME else "config_attention"
     
     print(f"\n🔧 Using configuration: {config_name}")
+    if _FORCE_FRESH:
+        print(f"🆕 Force fresh training mode: Will NOT resume from checkpoint")
     
     # Print configuration
     print("\n📋 Configuration:")
@@ -352,7 +369,7 @@ def main(config: DictConfig):
     print("[6/7] Initializing Attention-LSTM model...")
     print("=" * 80)
     
-    # Create output directory with config name
+    # Create output directory with config name and check for existing checkpoint
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Extract config identifier (remove 'config_attention_' prefix if present)
@@ -366,16 +383,47 @@ def main(config: DictConfig):
     # Extract suffix from config name (e.g., 'large' from 'config_attention_large')
     if config_name.startswith('config_attention_'):
         config_suffix = config_name.replace('config_attention_', '')
-        model_name = f"attention_lstm_{config_suffix}_{timestamp}"
+        model_prefix = f"attention_lstm_{config_suffix}"
     elif config_name == 'config_attention':
-        model_name = f"attention_lstm_baseline_{timestamp}"
+        model_prefix = f"attention_lstm_baseline"
     else:
-        model_name = f"attention_lstm_{config_name}_{timestamp}"
+        model_prefix = f"attention_lstm_{config_name}"
     
-    output_dir = os.path.join(config.paths.output_dir, model_name)
-    os.makedirs(output_dir, exist_ok=True)
-    print(f"✓ Output directory: {output_dir}")
-    print(f"✓ Model identifier: {model_name}")
+    # Check for existing checkpoint to resume from (unless --fresh flag is set)
+    resume_checkpoint = None
+    existing_dirs = []
+    
+    if not _FORCE_FRESH and os.path.exists(config.paths.output_dir):
+        # Look for directories matching this config
+        for dir_name in os.listdir(config.paths.output_dir):
+            if dir_name.startswith(model_prefix):
+                dir_path = os.path.join(config.paths.output_dir, dir_name)
+                if os.path.isdir(dir_path):
+                    # Check if last.ckpt exists
+                    last_ckpt = os.path.join(dir_path, 'last.ckpt')
+                    if os.path.exists(last_ckpt):
+                        existing_dirs.append((dir_name, last_ckpt, os.path.getmtime(last_ckpt)))
+    
+    # If existing checkpoints found, use the most recent one
+    if existing_dirs and not _FORCE_FRESH:
+        # Sort by modification time (most recent first)
+        existing_dirs.sort(key=lambda x: x[2], reverse=True)
+        most_recent_dir, resume_checkpoint, _ = existing_dirs[0]
+        output_dir = os.path.join(config.paths.output_dir, most_recent_dir)
+        model_name = most_recent_dir
+        
+        print(f"\n🔄 RESUMING FROM CHECKPOINT")
+        print(f"✓ Found existing checkpoint: {resume_checkpoint}")
+        print(f"✓ Resuming training for: {model_name}")
+        print(f"✓ Output directory: {output_dir}")
+    else:
+        # Create new directory
+        model_name = f"{model_prefix}_{timestamp}"
+        output_dir = os.path.join(config.paths.output_dir, model_name)
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"✓ Starting NEW training")
+        print(f"✓ Output directory: {output_dir}")
+        print(f"✓ Model identifier: {model_name}")
     
     # Initialize model
     stat_feature_dim = X_stat.shape[1]
@@ -463,8 +511,13 @@ def main(config: DictConfig):
         log_every_n_steps=10
     )
     
-    # Train
-    trainer.fit(model, train_loader, val_loader)
+    # Train (with resume if checkpoint exists)
+    if resume_checkpoint:
+        print(f"\n🔄 Resuming training from: {resume_checkpoint}")
+        trainer.fit(model, train_loader, val_loader, ckpt_path=resume_checkpoint)
+    else:
+        print(f"\n🆕 Starting fresh training")
+        trainer.fit(model, train_loader, val_loader)
     
     # ========================================================================
     # POST-TRAINING: EVALUATION AND RESULTS
@@ -579,10 +632,12 @@ def main(config: DictConfig):
 
 
 if __name__ == "__main__":
-    # Parse custom -c argument if present
-    _CONFIG_NAME = parse_custom_args()
+    # Parse custom -c argument and --fresh flag if present
+    _CONFIG_NAME, _FORCE_FRESH = parse_custom_args()
     if _CONFIG_NAME:
         print(f"📝 Custom config specified: {_CONFIG_NAME}")
+    if _FORCE_FRESH:
+        print(f"🆕 Fresh training requested: Will ignore existing checkpoints")
     
     # Run Hydra main
     main()
