@@ -91,7 +91,7 @@ scheduler:
 
 # Paths for saving results
 paths:
-  output_dir: "results/rnn_models"
+  output_dir: "/content/drive/MyDrive/data-science-infologic/results/rnn_models"
   logs_dir: "logs"
   metrics_dir: "results/metrics"
 
