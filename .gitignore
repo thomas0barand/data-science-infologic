@@ -1,6 +1,5 @@
 data/
 .venv/
 outputs/
-logs/
 models/
 __pycache__/

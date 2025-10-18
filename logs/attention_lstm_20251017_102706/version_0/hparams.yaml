@@ -1,0 +1,4 @@
+vocab_size: 3968
+num_users: 247
+stat_feature_dim: 22
+browser_dim: 4

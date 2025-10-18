@@ -35,6 +35,7 @@ from utils import (
     prepare_rnn_sequences, extract_statistical_features
 )
 from rnn_attention_lightning import AttentionLSTMClassifier
+from git_callback import GitHubAutoSaveCallback, GitHubEndOfTrainingCallback
 
 
 def compute_class_weights(targets, num_classes, device='cpu'):
@@ -418,6 +419,30 @@ def main(config: DictConfig):
     
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     
+    # Setup GitHub auto-save callback (if enabled)
+    callbacks_list = [checkpoint_callback, early_stopping_callback, lr_monitor]
+    
+    if config.github_autosave.enabled:
+        if config.github_autosave.mode == "each_epoch":
+            git_callback = GitHubAutoSaveCallback(
+                results_dir=config.github_autosave.results_dir,
+                commit_message_prefix=f"Auto-save {model_name}",
+                push_to_remote=config.github_autosave.push_to_remote,
+                include_checkpoints=config.github_autosave.include_checkpoints,
+                verbose=True
+            )
+            callbacks_list.append(git_callback)
+            print(f"⚠️  WARNING: GitHub auto-save at EACH EPOCH is enabled!")
+            print(f"   This will create many commits and may slow down training.")
+        elif config.github_autosave.mode == "end_of_training":
+            git_callback = GitHubEndOfTrainingCallback(
+                results_dir=config.github_autosave.results_dir,
+                push_to_remote=config.github_autosave.push_to_remote,
+                include_checkpoints=config.github_autosave.include_checkpoints,
+                model_name=model_name
+            )
+            callbacks_list.append(git_callback)
+    
     # Setup logger
     logger = TensorBoardLogger(
         save_dir=config.paths.logs_dir,
@@ -429,6 +454,10 @@ def main(config: DictConfig):
     print(f"  - EarlyStopping (patience: {config.training.early_stopping.patience})")
     print(f"  - LearningRateMonitor")
     print(f"  - TensorBoardLogger")
+    if config.github_autosave.enabled:
+        print(f"  - GitHubAutoSave (mode: {config.github_autosave.mode})")
+        print(f"    • Push to remote: {config.github_autosave.push_to_remote}")
+        print(f"    • Include checkpoints: {config.github_autosave.include_checkpoints}")
     
     # ========================================================================
     # 7. TRAIN MODEL
@@ -456,7 +485,7 @@ def main(config: DictConfig):
         precision=config.training.precision,
         gradient_clip_val=config.training.gradient_clip_val,
         accumulate_grad_batches=config.training.accumulate_grad_batches,
-        callbacks=[checkpoint_callback, early_stopping_callback, lr_monitor],
+        callbacks=callbacks_list,
         logger=logger,
         enable_progress_bar=True,
         enable_model_summary=True,
