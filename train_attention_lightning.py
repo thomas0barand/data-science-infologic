@@ -43,6 +43,14 @@ from utils import (
     prepare_rnn_sequences, extract_statistical_features
 )
 from rnn_attention_lightning import AttentionLSTMClassifier
+from cache_utils import (
+    get_cache_paths, check_cache_complete, print_cache_info,
+    load_stage1_cache, save_stage1_cache,
+    load_stage2_cache, save_stage2_cache,
+    load_stage3_cache, save_stage3_cache,
+    load_stage4_cache, save_stage4_cache,
+    save_metadata, load_metadata
+)
 
 
 def compute_class_weights(targets, num_classes, device='cpu'):
@@ -283,17 +291,35 @@ def main(config: DictConfig):
     pl.seed_everything(config.seed)
     
     # ========================================================================
+    # CACHE SETUP
+    # ========================================================================
+    cache_paths = get_cache_paths(config, cache_dir="cache")
+    print_cache_info(cache_paths)
+    
+    # Check if we can use cached data
+    use_cache = check_cache_complete(cache_paths, stages=[1, 2, 3, 4])
+    
+    # ========================================================================
     # 1. LOAD AND PREPARE DATA
     # ========================================================================
     print("\n" + "=" * 80)
     print("[1/7] Loading and preparing data...")
     print("=" * 80)
     
-    df_train = load_data(config.data.train_path, data_dir=config.data.data_dir, 
-                        size=config.data.size)
-    print(f"✓ Loaded {len(df_train)} training samples")
+    # Try to load cleaned dataframe from cache
+    df_train_clean = load_stage4_cache(cache_paths) if use_cache else None
     
-    df_train_clean = clean_data(df_train, is_train=True)
+    if df_train_clean is None:
+        # Load and clean from scratch
+        df_train = load_data(config.data.train_path, data_dir=config.data.data_dir, 
+                            size=config.data.size)
+        print(f"✓ Loaded {len(df_train)} training samples")
+        
+        df_train_clean = clean_data(df_train, is_train=True)
+        
+        # Save to cache
+        save_stage4_cache(df_train_clean, cache_paths)
+    
     num_users = df_train_clean['user_id'].nunique()
     print(f"✓ Number of unique users: {num_users}")
     
@@ -309,7 +335,18 @@ def main(config: DictConfig):
     print("[2/7] Building vocabulary and tokenizing sequences...")
     print("=" * 80)
     
-    sequences, vocabulary = tokenize_actions(df_train_clean, is_train=True)
+    # Try to load from cache
+    cached_stage1 = load_stage1_cache(cache_paths) if use_cache else None
+    
+    if cached_stage1 is not None:
+        sequences, vocabulary = cached_stage1
+    else:
+        # Compute from scratch
+        sequences, vocabulary = tokenize_actions(df_train_clean, is_train=True)
+        
+        # Save to cache
+        save_stage1_cache(sequences, vocabulary, cache_paths)
+    
     vocab_size = len(vocabulary)
     print(f"✓ Vocabulary size: {vocab_size} unique action signatures")
     print(f"✓ Average sequence length: {np.mean([len(s) for s in sequences]):.1f} actions")
@@ -322,10 +359,21 @@ def main(config: DictConfig):
     print("[3/7] Preparing RNN sequences...")
     print("=" * 80)
     
-    X_sequences, X_browser, y, user_categories = prepare_rnn_sequences(
-        df_train_clean, vocabulary, max_length=config.data.max_sequence_length, 
-        is_train=True
-    )
+    # Try to load from cache
+    cached_stage2 = load_stage2_cache(cache_paths) if use_cache else None
+    
+    if cached_stage2 is not None:
+        X_sequences, X_browser, y, user_categories = cached_stage2
+    else:
+        # Compute from scratch
+        X_sequences, X_browser, y, user_categories = prepare_rnn_sequences(
+            df_train_clean, vocabulary, max_length=config.data.max_sequence_length, 
+            is_train=True
+        )
+        
+        # Save to cache
+        save_stage2_cache(X_sequences, X_browser, y, user_categories, cache_paths)
+    
     print(f"✓ Sequences shape: {X_sequences.shape}")
     print(f"✓ Browser features shape: {X_browser.shape}")
     print(f"✓ Targets shape: {y.shape}")
@@ -337,7 +385,16 @@ def main(config: DictConfig):
     print("[4/7] Extracting statistical behavioral features...")
     print("=" * 80)
     
-    X_stat = extract_statistical_features(df_train_clean, action_sequences=sequences)
+    # Try to load from cache
+    X_stat = load_stage3_cache(cache_paths) if use_cache else None
+    
+    if X_stat is None:
+        # Compute from scratch
+        X_stat = extract_statistical_features(df_train_clean, action_sequences=sequences)
+        
+        # Save to cache
+        save_stage3_cache(X_stat, cache_paths)
+    
     print(f"✓ Statistical features shape: {X_stat.shape}")
     print(f"✓ Number of statistical features: {X_stat.shape[1]}")
     
@@ -534,13 +591,22 @@ def main(config: DictConfig):
     print(f"✓ Last model checkpoint: {checkpoint_callback.last_model_path}")
     
     # Load best model for final evaluation
-    best_model = AttentionLSTMClassifier.load_from_checkpoint(
-        checkpoint_callback.best_model_path,
+    best_model = AttentionLSTMClassifier(
         config=config,
         vocab_size=vocab_size,
         num_users=num_users,
         stat_feature_dim=stat_feature_dim
     )
+    
+    # Initialize criterion with class weights if needed (same as during training)
+    if config.training.use_class_weights or config.training.use_focal_loss:
+        class_weights = compute_class_weights(y[train_idx], num_users, device)
+        best_model.set_loss_function(class_weights)
+    
+    # Load the checkpoint state dict
+    checkpoint = torch.load(checkpoint_callback.best_model_path, map_location=device)
+    best_model.load_state_dict(checkpoint['state_dict'])
+    
     best_model.eval()
     best_model.to(device)
     

@@ -4,3 +4,4 @@ outputs/
 logs/
 models/
 __pycache__/
+cache/
