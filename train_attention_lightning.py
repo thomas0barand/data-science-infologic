@@ -293,7 +293,8 @@ def main(config: DictConfig):
     # ========================================================================
     # CACHE SETUP
     # ========================================================================
-    cache_paths = get_cache_paths(config, cache_dir="cache")
+
+    cache_paths = get_cache_paths(config, cache_dir=config.cache.cache_dir)
     print_cache_info(cache_paths)
     
     # Check if we can use cached data
