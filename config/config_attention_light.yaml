@@ -26,10 +26,10 @@ model:
   bidirectional: false  # Unidirectional for speed
   
   # Attention mechanism
-  attention_dim: 64     # Minimal attention
+  attention_dim: 128     # Minimal attention
   
   # Feature fusion
-  fusion_hidden_size: 128  # Minimal fusion layer
+  fusion_hidden_size: 256  # Minimal fusion layer
 
 # Training configuration
 training:
