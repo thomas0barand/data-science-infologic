@@ -86,9 +86,9 @@ scheduler:
 
 # Paths for saving results
 paths:
-  output_dir: "results/transformer_models"
-  logs_dir: "logs"
-  metrics_dir: "results/metrics"
+  output_dir: "/content/drive/MyDrive/data-science-infologic/results/transformer_models"
+  logs_dir: "/content/drive/MyDrive/data-science-infologic/logs"
+  metrics_dir: "/content/drive/MyDrive/data-science-infologic/results/metrics"
 
 # Cache configuration
 cache:
