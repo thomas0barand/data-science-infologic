@@ -1,0 +1,96 @@
+# Hydra Configuration for Transformer User Identification
+# Transformer with Local Attention for efficient long sequence processing
+# Using sequence data + browser features only (no statistical features)
+
+# Random seed for reproducibility
+seed: 42
+
+# Data configuration
+data:
+  train_path: "train"
+  test_path: "test"
+  data_dir: "data"
+  size: "full"          # Full dataset
+  max_sequence_length: 1000  # Manageable for local attention
+  train_split: 0.8
+  batch_size: 32        # Moderate batch size for transformer
+  num_workers: 4
+
+# Transformer model architecture
+model:
+  d_model: 256              # Transformer dimension
+  nhead: 8                  # Number of attention heads
+  num_layers: 4             # Transformer encoder layers
+  dim_feedforward: 1024     # Feed-forward network dimension
+  dropout: 0.3              # Dropout rate
+  local_attention_window: 128  # Local attention window size (one-sided)
+  pooling: "cls"            # Pooling method: "cls" or "mean"
+
+# Training configuration
+training:
+  max_epochs: 30
+  accelerator: "auto"
+  devices: 1
+  precision: "32"
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  
+  # Loss function
+  use_focal_loss: false
+  use_class_weights: true
+  
+  # Focal loss parameters (if enabled)
+  focal_loss:
+    gamma: 2.0
+    alpha_mode: "balanced"
+  
+  # Early stopping
+  early_stopping:
+    monitor: "val_f1"
+    patience: 10
+    mode: "max"
+    min_delta: 0.001
+  
+  # Checkpointing
+  checkpoint:
+    monitor: "val_f1"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "epoch={epoch:02d}-val_f1={val_f1:.4f}"
+
+# Optimizer configuration
+optimizer:
+  name: "adamw"          # AdamW recommended for transformers
+  lr: 0.0001             # Lower learning rate for stable training
+  weight_decay: 0.01     # Weight decay for regularization
+
+# Learning rate scheduler
+scheduler:
+  name: "cosine"         # Cosine annealing recommended for transformers
+  
+  reduce_on_plateau:
+    monitor: "val_f1"
+    factor: 0.5
+    patience: 5
+    min_lr: 0.000001
+    mode: "max"
+  
+  cosine:
+    T_max: 30            # Match max_epochs
+    eta_min: 0.000001
+  
+  step:
+    step_size: 10
+    gamma: 0.5
+
+# Paths for saving results
+paths:
+  output_dir: "results/transformer_models"
+  logs_dir: "logs"
+  metrics_dir: "results/metrics"
+
+# Cache configuration
+cache:
+  cache_dir: "cache"
+

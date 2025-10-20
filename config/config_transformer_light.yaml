@@ -1,0 +1,96 @@
+# Hydra Configuration for Transformer User Identification - LIGHT VERSION
+# Fast training for testing and debugging
+# Goal: Quick iterations to verify loss is working and model trains correctly
+
+# Random seed for reproducibility
+seed: 42
+
+# Data configuration
+data:
+  train_path: "train"
+  test_path: "test"
+  data_dir: "data"
+  size: "small"         # Use small dataset (20% of data)
+  max_sequence_length: 500  # Shorter sequences for speed
+  train_split: 0.8
+  batch_size: 64        # Larger batch for efficiency
+  num_workers: 4
+
+# Transformer model architecture - LIGHT CONFIGURATION
+model:
+  d_model: 128              # Smaller transformer dimension
+  nhead: 4                  # Fewer attention heads
+  num_layers: 2             # Just 2 layers for speed
+  dim_feedforward: 512      # Smaller FFN dimension
+  dropout: 0.2              # Light dropout
+  local_attention_window: 64   # Smaller attention window
+  pooling: "cls"            # Use CLS token pooling
+
+# Training configuration
+training:
+  max_epochs: 10            # Few epochs for quick test
+  accelerator: "auto"
+  devices: 1
+  precision: "32"
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  
+  # Loss function
+  use_focal_loss: false
+  use_class_weights: true   # Keep class weights for imbalance
+  
+  # Focal loss parameters (if enabled)
+  focal_loss:
+    gamma: 2.0
+    alpha_mode: "balanced"
+  
+  # Early stopping - More aggressive
+  early_stopping:
+    monitor: "val_f1"
+    patience: 5             # Stop early if not improving
+    mode: "max"
+    min_delta: 0.001
+  
+  # Checkpointing
+  checkpoint:
+    monitor: "val_f1"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "epoch={epoch:02d}-val_f1={val_f1:.4f}"
+
+# Optimizer configuration
+optimizer:
+  name: "adamw"          # AdamW recommended for transformers
+  lr: 0.001              # Higher learning rate for faster convergence
+  weight_decay: 0.01     # Weight decay for regularization
+
+# Learning rate scheduler
+scheduler:
+  name: "reduce_on_plateau"  # More responsive than cosine for testing
+  
+  reduce_on_plateau:
+    monitor: "val_f1"
+    factor: 0.5
+    patience: 3
+    min_lr: 0.00001
+    mode: "max"
+  
+  cosine:
+    T_max: 10
+    eta_min: 0.000001
+  
+  step:
+    step_size: 5
+    gamma: 0.5
+
+# Paths for saving results
+paths:
+  output_dir: "results/transformer_models"
+  logs_dir: "logs"
+  metrics_dir: "results/metrics"
+
+# Cache configuration
+cache:
+  cache_dir: "cache"
+
