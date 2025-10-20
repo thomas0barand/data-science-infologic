@@ -26,9 +26,98 @@ from utils import (
 from rnn_attention_lightning import AttentionLSTMClassifier
 
 
+def reconstruct_config_from_checkpoint(checkpoint):
+    """
+    Reconstruct configuration from checkpoint when config.yaml is missing.
+    
+    Args:
+        checkpoint (dict): PyTorch Lightning checkpoint
+        
+    Returns:
+        OmegaConf: Reconstructed configuration
+    """
+    state_dict = checkpoint['state_dict']
+    
+    # Extract architecture parameters from state_dict
+    embedding_weight = state_dict.get('embedding.weight')
+    lstm_weight_ih_l0 = state_dict.get('lstm.weight_ih_l0')
+    stat_bn_weight = state_dict.get('stat_bn.weight')
+    fusion_weight = state_dict.get('fusion.0.weight')
+    classifier_weight = state_dict.get('classifier.weight')
+    
+    # Infer parameters
+    vocab_size = embedding_weight.shape[0] if embedding_weight is not None else 4000
+    embedding_dim = embedding_weight.shape[1] if embedding_weight is not None else 64
+    
+    # LSTM hidden size - weight_ih has shape (4*hidden_size, input_size)
+    if lstm_weight_ih_l0 is not None:
+        hidden_size = lstm_weight_ih_l0.shape[0] // 4
+    else:
+        hidden_size = 128
+    
+    # Check if bidirectional by looking for reverse layer weights
+    bidirectional = 'lstm.weight_ih_l0_reverse' in state_dict
+    
+    # Get number of layers
+    num_layers = 1
+    for key in state_dict.keys():
+        if 'lstm.weight_ih_l' in key:
+            layer_num = int(key.split('_l')[1].split('_')[0].replace('reverse', ''))
+            num_layers = max(num_layers, layer_num + 1)
+    
+    # Statistical feature dimension
+    stat_feature_dim = stat_bn_weight.shape[0] if stat_bn_weight is not None else 22
+    
+    # Number of users (output classes)
+    num_users = classifier_weight.shape[0] if classifier_weight is not None else 247
+    
+    # Attention dimension - infer from attention layer
+    attention_weight = state_dict.get('attention.W.weight')
+    if attention_weight is not None:
+        attention_dim = attention_weight.shape[0]
+    else:
+        attention_dim = hidden_size * (2 if bidirectional else 1)
+    
+    # Fusion hidden size
+    if fusion_weight is not None:
+        fusion_hidden_size = fusion_weight.shape[0]
+    else:
+        fusion_hidden_size = 256
+    
+    # Create minimal config with all required sections
+    config_dict = {
+        'model': {
+            'embedding_dim': int(embedding_dim),
+            'hidden_size': int(hidden_size),
+            'num_layers': int(num_layers),
+            'dropout': 0.3,  # Default
+            'bidirectional': bool(bidirectional),
+            'attention_dim': int(attention_dim),
+            'fusion_hidden_size': int(fusion_hidden_size)
+        },
+        'data': {
+            'max_sequence_length': 2000,  # Default
+            'batch_size': 64
+        },
+        'training': {
+            'use_focal_loss': False,  # Default for inference
+            'focal_loss': {
+                'gamma': 2.0,
+                'alpha_mode': 'balanced'
+            }
+        }
+    }
+    
+    config = OmegaConf.create(config_dict)
+    
+    return config
+
+
 def load_model_and_artifacts(checkpoint_path):
     """
     Load trained model and required artifacts (vocabulary, user_categories, scaler).
+    
+    Config file is optional - the script can reconstruct model architecture from checkpoint.
     
     Args:
         checkpoint_path (str): Path to model checkpoint (.ckpt file)
@@ -48,38 +137,133 @@ def load_model_and_artifacts(checkpoint_path):
     # Check if paths exist
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    if not os.path.exists(artifacts_dir):
-        raise FileNotFoundError(f"Artifacts directory not found: {artifacts_dir}")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    # Artifacts directory is optional - we can work without it if vocabulary/scaler are found elsewhere
+    has_artifacts_dir = os.path.exists(artifacts_dir)
+    has_config_file = os.path.exists(config_path)
     
     print(f"✓ Checkpoint: {checkpoint_path}")
-    print(f"✓ Artifacts directory: {artifacts_dir}")
-    print(f"✓ Config file: {config_path}")
+    if has_artifacts_dir:
+        print(f"✓ Artifacts directory: {artifacts_dir}")
+    else:
+        print(f"⚠️  Artifacts directory not found (will try to locate artifacts elsewhere)")
+    if has_config_file:
+        print(f"✓ Config file: {config_path}")
+    else:
+        print(f"⚠️  Config file not found (will reconstruct from checkpoint)")
     
-    # Load artifacts
+    # Load checkpoint first to check what's available
+    print("\n🔍 Loading checkpoint...")
+    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    
+    # Check if hyperparameters are in checkpoint
+    has_hyperparams = 'hyper_parameters' in checkpoint
+    if has_hyperparams:
+        hparams = checkpoint['hyper_parameters']
+        print(f"✓ Found hyperparameters in checkpoint")
+    else:
+        print(f"⚠️  No hyperparameters in checkpoint, will need config file")
+    
+    # Load artifacts (try multiple locations)
     print("\n📦 Loading artifacts...")
-    vocabulary = joblib.load(os.path.join(artifacts_dir, 'vocabulary.joblib'))
-    user_categories = joblib.load(os.path.join(artifacts_dir, 'user_categories.joblib'))
-    scaler = joblib.load(os.path.join(artifacts_dir, 'stat_scaler.joblib'))
     
-    print(f"  • Vocabulary size: {len(vocabulary)}")
-    print(f"  • Number of users: {len(user_categories)}")
-    print(f"  • Statistical feature scaler: {scaler.__class__.__name__}")
+    # Try to load vocabulary (search in multiple locations)
+    vocabulary = None
+    vocab_paths = [
+        os.path.join(artifacts_dir, 'vocabulary.joblib') if has_artifacts_dir else None,
+        # Fallback: search in results/rnn_models for any vocabulary.joblib
+        *[os.path.join(root, 'artifacts', 'vocabulary.joblib') 
+          for root, dirs, files in os.walk('results/rnn_models') 
+          if 'artifacts' in dirs][:3]  # Check up to 3 other models
+    ]
     
-    # Load config
+    for vocab_path in vocab_paths:
+        if vocab_path and os.path.exists(vocab_path):
+            try:
+                vocabulary = joblib.load(vocab_path)
+                print(f"  ✓ Vocabulary loaded: {len(vocabulary)} tokens")
+                if vocab_path != vocab_paths[0]:
+                    print(f"    (from fallback: {vocab_path})")
+                break
+            except:
+                continue
+    
+    if vocabulary is None:
+        print(f"  ⚠️  Vocabulary not found, will build from test data (predictions may be poor)")
+    
+    # Try to load user_categories (search in multiple locations)
+    user_categories = None
+    user_cat_paths = [
+        os.path.join(artifacts_dir, 'user_categories.joblib') if has_artifacts_dir else None,
+        # Fallback: search in results/rnn_models
+        *[os.path.join(root, 'artifacts', 'user_categories.joblib') 
+          for root, dirs, files in os.walk('results/rnn_models') 
+          if 'artifacts' in dirs][:3]
+    ]
+    
+    for user_cat_path in user_cat_paths:
+        if user_cat_path and os.path.exists(user_cat_path):
+            try:
+                user_categories = joblib.load(user_cat_path)
+                if hasattr(user_categories, 'categories'):
+                    print(f"  ✓ User categories loaded: {len(user_categories.categories)} users")
+                elif hasattr(user_categories, '__len__'):
+                    print(f"  ✓ User categories loaded: {len(user_categories)} users")
+                else:
+                    print(f"  ✓ User categories loaded")
+                if user_cat_path != user_cat_paths[0]:
+                    print(f"    (from fallback: {user_cat_path})")
+                break
+            except:
+                continue
+    
+    if user_categories is None:
+        print(f"  ⚠️  User categories not found, predictions will use indices")
+    
+    # Try to load scaler (search in multiple locations)
+    scaler = None
+    scaler_paths = [
+        os.path.join(artifacts_dir, 'stat_scaler.joblib') if has_artifacts_dir else None,
+        # Fallback: search in results/rnn_models
+        *[os.path.join(root, 'artifacts', 'stat_scaler.joblib') 
+          for root, dirs, files in os.walk('results/rnn_models') 
+          if 'artifacts' in dirs][:3]
+    ]
+    
+    for scaler_path in scaler_paths:
+        if scaler_path and os.path.exists(scaler_path):
+            try:
+                scaler = joblib.load(scaler_path)
+                print(f"  ✓ Statistical feature scaler: {scaler.__class__.__name__}")
+                if scaler_path != scaler_paths[0]:
+                    print(f"    (from fallback: {scaler_path})")
+                break
+            except:
+                continue
+    
+    if scaler is None:
+        print(f"  ⚠️  Scaler not found, will use raw features (predictions may be degraded)")
+    
+    # Load or reconstruct config
     print("\n🔧 Loading configuration...")
-    config = OmegaConf.load(config_path)
+    if has_config_file:
+        config = OmegaConf.load(config_path)
+        print(f"  ✓ Config loaded from file")
+    elif has_hyperparams and 'state_dict' in checkpoint:
+        # Reconstruct config from checkpoint
+        print(f"  🔨 Reconstructing config from checkpoint...")
+        config = reconstruct_config_from_checkpoint(checkpoint)
+        print(f"  ✓ Config reconstructed from checkpoint")
+    else:
+        raise RuntimeError("Cannot load or reconstruct config. Need either config.yaml or checkpoint with hyperparameters")
+    
     print(f"  • Model type: Attention-LSTM")
     print(f"  • Embedding dim: {config.model.embedding_dim}")
     print(f"  • Hidden size: {config.model.hidden_size}")
     print(f"  • Bidirectional: {config.model.bidirectional}")
     
-    # Load checkpoint to get hyperparameters
-    print("\n🔍 Loading checkpoint...")
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
-    
     # Get dimensions from checkpoint state_dict
+    print("\n📐 Extracting model dimensions...")
     if 'state_dict' in checkpoint:
         state_dict = checkpoint['state_dict']
         
@@ -117,7 +301,11 @@ def load_model_and_artifacts(checkpoint_path):
     
     print(f"  • Vocab size: {vocab_size}")
     print(f"  • Num users (from checkpoint): {num_users}")
-    print(f"  • Num users (from categories): {len(user_categories)}")
+    if user_categories is not None:
+        if hasattr(user_categories, 'categories'):
+            print(f"  • Num users (from categories): {len(user_categories.categories)}")
+        elif hasattr(user_categories, '__len__'):
+            print(f"  • Num users (from categories): {len(user_categories)}")
     print(f"  • Stat feature dim: {stat_feature_dim}")
     
     # Initialize model
@@ -151,8 +339,8 @@ def process_test_data(test_csv_path, vocabulary, scaler, config):
     
     Args:
         test_csv_path (str): Path to test.csv
-        vocabulary (dict): Vocabulary from training
-        scaler: Statistical feature scaler from training
+        vocabulary (dict or None): Vocabulary from training (None = build from test data)
+        scaler (StandardScaler or None): Statistical feature scaler (None = use raw features)
         config: Model configuration
         
     Returns:
@@ -174,8 +362,14 @@ def process_test_data(test_csv_path, vocabulary, scaler, config):
     
     # Tokenize sequences
     print("\n🔤 Tokenizing sequences...")
-    sequences, _ = tokenize_actions(df_test_clean, is_train=False, vocabulary=vocabulary)
+    if vocabulary is None:
+        print("  ⚠️  No vocabulary provided, building from test data (may miss training tokens)")
+        sequences, vocabulary = tokenize_actions(df_test_clean, is_train=True)  # Build vocab
+    else:
+        sequences, _ = tokenize_actions(df_test_clean, is_train=False, vocabulary=vocabulary)
+    
     print(f"✓ Tokenized {len(sequences)} sequences")
+    print(f"  • Vocabulary size: {len(vocabulary)}")
     print(f"  • Average sequence length: {np.mean([len(s) for s in sequences]):.1f} actions")
     
     # Prepare RNN sequences
@@ -194,9 +388,13 @@ def process_test_data(test_csv_path, vocabulary, scaler, config):
     print(f"✓ Statistical features shape: {X_stat.shape}")
     
     # Normalize statistical features using training scaler
-    print("\n🔄 Normalizing statistical features...")
-    X_stat_normalized = scaler.transform(X_stat)
-    print(f"✓ Statistical features normalized")
+    if scaler is not None:
+        print("\n🔄 Normalizing statistical features...")
+        X_stat_normalized = scaler.transform(X_stat)
+        print(f"✓ Statistical features normalized")
+    else:
+        print("\n⚠️  No scaler provided, using raw statistical features")
+        X_stat_normalized = X_stat
     
     return X_sequences, X_stat_normalized, X_browser
 
@@ -314,6 +512,7 @@ def create_submission_file(predictions, output_path='submission.csv'):
     print(submission_df.head(10))
     
     # Save to CSV
+
     submission_df.to_csv(output_path, index=False)
     print(f"\n✓ Submission file saved to: {output_path}")
     print(f"  • Total predictions: {len(predictions)}")

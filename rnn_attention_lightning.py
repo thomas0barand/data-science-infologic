@@ -100,11 +100,48 @@ class AttentionLSTMClassifier(pl.LightningModule):
             nn.Dropout(dropout)
         )
         
-        # Final classification layer
-        self.classifier = nn.Linear(fusion_hidden_size // 2, num_users)
+
+        # Enhanced classification head with residual connections and better regularization
+        classifier_hidden_size = fusion_hidden_size // 2
+        
+        # Main classification layers with residual connections
+        self.classifier_layers = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(classifier_hidden_size, classifier_hidden_size),
+                nn.LayerNorm(classifier_hidden_size),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.5),  # Higher dropout for classifier
+            ),
+            nn.Sequential(
+                nn.Linear(classifier_hidden_size, classifier_hidden_size),
+                nn.LayerNorm(classifier_hidden_size),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.5),
+            )
+        ])
+        
+        # Final output layer (no softmax - CrossEntropyLoss expects logits)
+        self.classifier_output = nn.Linear(classifier_hidden_size, num_users)
+        
+        # Initialize weights properly
+        self._init_classifier_weights()
+    
+    def _init_classifier_weights(self):
+        """Initialize classifier weights using Xavier/He initialization."""
+        for layer in self.classifier_layers:
+            for module in layer:
+                if isinstance(module, nn.Linear):
+                    nn.init.xavier_uniform_(module.weight)
+                    if module.bias is not None:
+                        nn.init.constant_(module.bias, 0)
+        
+        # Initialize output layer with smaller weights
+        nn.init.xavier_uniform_(self.classifier_output.weight, gain=0.1)
+        if self.classifier_output.bias is not None:
+            nn.init.constant_(self.classifier_output.bias, 0)
         
         # Loss function
-        if config.training.use_focal_loss:
+        if self.config.training.use_focal_loss:
             # Focal loss will be configured with class weights in training script
             self.criterion = None  # Will be set in setup()
             self.use_focal_loss = True
@@ -113,9 +150,9 @@ class AttentionLSTMClassifier(pl.LightningModule):
             self.use_focal_loss = False
         
         # Metrics
-        self.train_acc = Accuracy(task="multiclass", num_classes=num_users)
-        self.val_acc = Accuracy(task="multiclass", num_classes=num_users)
-        self.val_f1 = F1Score(task="multiclass", num_classes=num_users, average='weighted')
+        self.train_acc = Accuracy(task="multiclass", num_classes=self.num_users)
+        self.val_acc = Accuracy(task="multiclass", num_classes=self.num_users)
+        self.val_f1 = F1Score(task="multiclass", num_classes=self.num_users, average='weighted')
         
         # Store validation outputs
         self.validation_step_outputs = []
@@ -176,8 +213,18 @@ class AttentionLSTMClassifier(pl.LightningModule):
         # 7. Feature fusion
         fused_features = self.fusion(combined)
         
-        # 8. Final classification
-        logits = self.classifier(fused_features)
+        # 8. Enhanced classification with residual connections
+        x = fused_features
+        
+        # Apply classifier layers with residual connections
+        for i, layer in enumerate(self.classifier_layers):
+            residual = x
+            x = layer(x)
+            # Add residual connection (skip connection)
+            x = x + residual
+        
+        # Final classification (output logits, not probabilities)
+        logits = self.classifier_output(x)
         
         return logits, attention_weights
     
@@ -355,6 +402,7 @@ class AttentionLSTMClassifier(pl.LightningModule):
         self.eval()
         with torch.no_grad():
             logits, _ = self(sequences, statistical_features, browser_features)
+            # Apply softmax to convert logits to probabilities
             probabilities = torch.softmax(logits, dim=1)
             return probabilities.cpu().numpy()
     
