@@ -47,23 +47,27 @@ from cache_utils import (
 )
 
 
-def compute_class_weights(targets, num_classes, device='cpu'):
+def compute_class_weights(targets, num_classes, device='cpu', max_weight=10.0):
     """
-    Compute class weights for imbalanced dataset.
+    Compute class weights for imbalanced dataset with clipping.
     
     Args:
         targets (np.ndarray): Target labels
         num_classes (int): Number of classes
         device (str): Device to put weights on
+        max_weight (float): Maximum weight value to prevent extreme values
         
     Returns:
         torch.Tensor: Class weights
     """
     class_counts = np.bincount(targets, minlength=num_classes)
     
-    # Compute inverse frequency weights
+    # Compute inverse frequency weights with smoothing
     total_samples = len(targets)
-    weights = total_samples / (num_classes * (class_counts + 1))
+    weights = total_samples / (num_classes * (class_counts + 1e-6))
+    
+    # Clip weights to prevent extreme values
+    weights = np.clip(weights, 0.1, max_weight)
     
     # Normalize weights
     weights = weights / weights.sum() * num_classes

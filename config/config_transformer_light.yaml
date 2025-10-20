@@ -32,7 +32,7 @@ training:
   accelerator: "auto"
   devices: 1
   precision: "32"
-  gradient_clip_val: 1.0
+  gradient_clip_val: 0.5    # More conservative clipping
   accumulate_grad_batches: 1
   
   # Loss function
@@ -62,7 +62,7 @@ training:
 # Optimizer configuration
 optimizer:
   name: "adamw"          # AdamW recommended for transformers
-  lr: 0.001              # Higher learning rate for faster convergence
+  lr: 0.0001             # Lower learning rate for numerical stability
   weight_decay: 0.01     # Weight decay for regularization
 
 # Learning rate scheduler

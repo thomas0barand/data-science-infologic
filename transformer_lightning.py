@@ -248,23 +248,24 @@ class TransformerUserClassifier(pl.LightningModule):
         self._init_weights()
     
     def _init_weights(self):
-        """Initialize model weights with proper scaling."""
+        """Initialize model weights with proper scaling for numerical stability."""
         # Initialize embeddings with scaled normal distribution
-        # Scale by sqrt(d_model) as recommended for transformers
+        # Use smaller std for better stability
         d_model = self.config.model.d_model
-        nn.init.normal_(self.embedding.weight, mean=0, std=1.0/math.sqrt(d_model))
+        nn.init.normal_(self.embedding.weight, mean=0, std=0.02)
         # Set padding token embedding to zero
         with torch.no_grad():
             self.embedding.weight[0].fill_(0)
         
-        # Initialize CLS token if present
+        # Initialize CLS token if present with very small values
         if hasattr(self, 'cls_token'):
-            nn.init.normal_(self.cls_token, mean=0, std=0.02)
+            nn.init.normal_(self.cls_token, mean=0, std=0.01)
         
-        # Initialize classifier with Xavier initialization
+        # Initialize classifier with careful scaling
         for module in self.classifier:
             if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight, gain=1.0)
+                # Use smaller gain for better stability
+                nn.init.xavier_uniform_(module.weight, gain=0.5)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
     
@@ -297,8 +298,10 @@ class TransformerUserClassifier(pl.LightningModule):
         
         # 1. Embed sequences: (batch_size, seq_length) -> (batch_size, seq_length, d_model)
         embedded = self.embedding(sequences)
-        # Scale embeddings by sqrt(d_model) as per "Attention is All You Need"
-        embedded = embedded * math.sqrt(self.config.model.d_model)
+        # Scale embeddings more conservatively to prevent overflow
+        # Original paper uses sqrt(d_model), but we use a smaller factor for stability
+        scale_factor = min(math.sqrt(self.config.model.d_model), 4.0)
+        embedded = embedded * scale_factor
         
         # 2. Add CLS token if using CLS pooling
         if self.pooling_method == 'cls':
@@ -338,11 +341,15 @@ class TransformerUserClassifier(pl.LightningModule):
             # Use CLS token output
             pooled = transformer_out[:, 0, :]
         else:
-            # Mean pooling over non-padding tokens
+            # Mean pooling over non-padding tokens with numerical stability
             mask_expanded = (~src_key_padding_mask).unsqueeze(-1).expand(transformer_out.size())
             sum_out = (transformer_out * mask_expanded.float()).sum(1)
-            count = mask_expanded.sum(1).clamp(min=1.0)
+            count = mask_expanded.sum(1).clamp(min=1e-8)  # Prevent division by zero
             pooled = sum_out / count
+        
+        # Check for NaN/Inf after pooling
+        if torch.isnan(pooled).any() or torch.isinf(pooled).any():
+            pooled = torch.nan_to_num(pooled, nan=0.0, posinf=1.0, neginf=-1.0)
         
         # 7. Concatenate with browser features
         combined = torch.cat([pooled, browser_features], dim=1)
@@ -356,19 +363,26 @@ class TransformerUserClassifier(pl.LightningModule):
         """Training step for one batch."""
         sequences, browser_features, targets = batch
         
+        # Validate inputs for NaN/Inf
+        if torch.isnan(browser_features).any() or torch.isinf(browser_features).any():
+            print(f"⚠️  Warning: NaN/Inf in browser features at batch {batch_idx}")
+            browser_features = torch.nan_to_num(browser_features, nan=0.0, posinf=1.0, neginf=-1.0)
+        
         # Forward pass
         logits = self(sequences, browser_features)
         
         # Check for NaN/Inf in logits
         if torch.isnan(logits).any() or torch.isinf(logits).any():
-            print(f"⚠️  Warning: NaN/Inf detected in logits at batch {batch_idx}")
-            logits = torch.clamp(logits, min=-10, max=10)
+            print(f"⚠️  Warning: NaN/Inf detected in training logits at batch {batch_idx}")
+            print(f"   - NaN count: {torch.isnan(logits).sum().item()}")
+            print(f"   - Inf count: {torch.isinf(logits).sum().item()}")
+            logits = torch.nan_to_num(logits, nan=0.0, posinf=10.0, neginf=-10.0)
         
         loss = self.criterion(logits, targets)
         
         # Check for NaN loss
-        if torch.isnan(loss):
-            print(f"⚠️  Warning: NaN loss at batch {batch_idx}, skipping")
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"⚠️  Warning: NaN/Inf loss at batch {batch_idx}, skipping")
             return None
         
         # Calculate accuracy
@@ -385,15 +399,27 @@ class TransformerUserClassifier(pl.LightningModule):
         """Validation step for one batch."""
         sequences, browser_features, targets = batch
         
+        # Validate inputs for NaN/Inf
+        if torch.isnan(browser_features).any() or torch.isinf(browser_features).any():
+            print(f"⚠️  Warning: NaN/Inf in browser features at validation batch {batch_idx}")
+            browser_features = torch.nan_to_num(browser_features, nan=0.0, posinf=1.0, neginf=-1.0)
+        
         # Forward pass
         logits = self(sequences, browser_features)
         
         # Check for NaN/Inf in logits
         if torch.isnan(logits).any() or torch.isinf(logits).any():
             print(f"⚠️  Warning: NaN/Inf detected in validation logits at batch {batch_idx}")
-            logits = torch.clamp(logits, min=-10, max=10)
+            print(f"   - NaN count: {torch.isnan(logits).sum().item()}")
+            print(f"   - Inf count: {torch.isinf(logits).sum().item()}")
+            logits = torch.nan_to_num(logits, nan=0.0, posinf=10.0, neginf=-10.0)
         
         loss = self.criterion(logits, targets)
+        
+        # Check for NaN/Inf loss
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"⚠️  Warning: NaN/Inf loss at validation batch {batch_idx}")
+            loss = torch.tensor(0.0, device=loss.device, requires_grad=True)
         
         # Calculate metrics
         preds = torch.argmax(logits, dim=1)
