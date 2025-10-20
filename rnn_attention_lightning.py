@@ -101,44 +101,168 @@ class AttentionLSTMClassifier(pl.LightningModule):
         )
         
 
-        # Enhanced classification head with residual connections and better regularization
-        classifier_hidden_size = fusion_hidden_size // 2
+        # ============================================================================
+        # DEEP CLASSIFICATION HEAD with Advanced Architecture
+        # ============================================================================
+        # Architecture: Multi-scale residual blocks + SE attention + progressive reduction
+        # Recommended fusion_hidden_size: 512-1024 for best performance
         
-        # Main classification layers with residual connections
-        self.classifier_layers = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(classifier_hidden_size, classifier_hidden_size),
-                nn.LayerNorm(classifier_hidden_size),
+        classifier_input_size = fusion_hidden_size // 2
+        
+        # Define intermediate dimensions with progressive reduction
+        # This creates a funnel architecture: wide -> narrow -> output
+        dim1 = classifier_input_size  # e.g., 256 if fusion_hidden_size=512
+        dim2 = max(dim1, 256)  # Ensure at least 256 for expressiveness
+        dim3 = dim2 // 2  # e.g., 128
+        dim4 = max(dim3, 128)  # Ensure at least 128
+        
+        # Store dimensions for weight initialization
+        self.classifier_dims = [dim1, dim2, dim3, dim4]
+        
+        # ------------------------------------------------------------------------
+        # Block 1: Input expansion with residual connection
+        # ------------------------------------------------------------------------
+        self.classifier_block1 = nn.ModuleDict({
+            'main': nn.Sequential(
+                nn.Linear(dim1, dim2),
+                nn.LayerNorm(dim2),
                 nn.GELU(),
-                nn.Dropout(dropout * 1.5),  # Higher dropout for classifier
+                nn.Dropout(dropout * 1.2),
+                nn.Linear(dim2, dim2),
+                nn.LayerNorm(dim2),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.2),
             ),
-            nn.Sequential(
-                nn.Linear(classifier_hidden_size, classifier_hidden_size),
-                nn.LayerNorm(classifier_hidden_size),
+            'residual': nn.Linear(dim1, dim2) if dim1 != dim2 else nn.Identity(),
+            'se_attention': self._create_se_block(dim2, reduction=8)
+        })
+        
+        # ------------------------------------------------------------------------
+        # Block 2: Deep residual block with attention
+        # ------------------------------------------------------------------------
+        self.classifier_block2 = nn.ModuleDict({
+            'main': nn.Sequential(
+                nn.Linear(dim2, dim2),
+                nn.LayerNorm(dim2),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.3),
+                nn.Linear(dim2, dim2),
+                nn.LayerNorm(dim2),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.3),
+            ),
+            'se_attention': self._create_se_block(dim2, reduction=8)
+        })
+        
+        # ------------------------------------------------------------------------
+        # Block 3: Dimensionality reduction block
+        # ------------------------------------------------------------------------
+        self.classifier_block3 = nn.ModuleDict({
+            'main': nn.Sequential(
+                nn.Linear(dim2, dim3),
+                nn.LayerNorm(dim3),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.4),
+                nn.Linear(dim3, dim3),
+                nn.LayerNorm(dim3),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.4),
+            ),
+            'residual': nn.Linear(dim2, dim3),
+            'se_attention': self._create_se_block(dim3, reduction=4)
+        })
+        
+        # ------------------------------------------------------------------------
+        # Block 4: Further refinement
+        # ------------------------------------------------------------------------
+        self.classifier_block4 = nn.ModuleDict({
+            'main': nn.Sequential(
+                nn.Linear(dim3, dim4),
+                nn.LayerNorm(dim4),
                 nn.GELU(),
                 nn.Dropout(dropout * 1.5),
-            )
-        ])
+                nn.Linear(dim4, dim4),
+                nn.LayerNorm(dim4),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.5),
+            ),
+            'residual': nn.Linear(dim3, dim4) if dim3 != dim4 else nn.Identity(),
+            'se_attention': self._create_se_block(dim4, reduction=4)
+        })
         
-        # Final output layer (no softmax - CrossEntropyLoss expects logits)
-        self.classifier_output = nn.Linear(classifier_hidden_size, num_users)
+        # ------------------------------------------------------------------------
+        # Block 5: Final refinement before output
+        # ------------------------------------------------------------------------
+        self.classifier_block5 = nn.ModuleDict({
+            'main': nn.Sequential(
+                nn.Linear(dim4, dim4),
+                nn.LayerNorm(dim4),
+                nn.GELU(),
+                nn.Dropout(dropout * 1.6),
+            ),
+            'se_attention': self._create_se_block(dim4, reduction=4)
+        })
         
-        # Initialize weights properly
+        # ------------------------------------------------------------------------
+        # Final projection layer
+        # ------------------------------------------------------------------------
+        self.classifier_output = nn.Sequential(
+            nn.Linear(dim4, dim4 // 2),
+            nn.LayerNorm(dim4 // 2),
+            nn.GELU(),
+            nn.Dropout(dropout * 1.8),
+            nn.Linear(dim4 // 2, num_users)
+        )
+        
+        # Stochastic depth probabilities for each block (optional, for training stability)
+        self.drop_path_probs = [0.0, 0.05, 0.1, 0.15, 0.2]
+        
+        # Initialize all classifier weights
         self._init_classifier_weights()
+    
+    def _create_se_block(self, channels, reduction=8):
+        """
+        Create Squeeze-and-Excitation block for feature recalibration.
+        
+        Args:
+            channels (int): Number of input channels
+            reduction (int): Reduction ratio for bottleneck
+            
+        Returns:
+            nn.Sequential: SE block
+        """
+        return nn.Sequential(
+            nn.Linear(channels, max(channels // reduction, 8)),
+            nn.ReLU(inplace=True),
+            nn.Linear(max(channels // reduction, 8), channels),
+            nn.Sigmoid()
+        )
     
     def _init_classifier_weights(self):
         """Initialize classifier weights using Xavier/He initialization."""
-        for layer in self.classifier_layers:
-            for module in layer:
-                if isinstance(module, nn.Linear):
-                    nn.init.xavier_uniform_(module.weight)
-                    if module.bias is not None:
-                        nn.init.constant_(module.bias, 0)
+        # Initialize all blocks
+        for block_name in ['classifier_block1', 'classifier_block2', 'classifier_block3', 
+                          'classifier_block4', 'classifier_block5']:
+            if hasattr(self, block_name):
+                block = getattr(self, block_name)
+                for key, module in block.items():
+                    if isinstance(module, nn.Sequential):
+                        for m in module:
+                            if isinstance(m, nn.Linear):
+                                nn.init.xavier_uniform_(m.weight, gain=1.0)
+                                if m.bias is not None:
+                                    nn.init.constant_(m.bias, 0)
+                    elif isinstance(module, nn.Linear):
+                        nn.init.xavier_uniform_(module.weight, gain=1.0)
+                        if module.bias is not None:
+                            nn.init.constant_(module.bias, 0)
         
-        # Initialize output layer with smaller weights
-        nn.init.xavier_uniform_(self.classifier_output.weight, gain=0.1)
-        if self.classifier_output.bias is not None:
-            nn.init.constant_(self.classifier_output.bias, 0)
+        # Initialize output projection with smaller weights for stability
+        for module in self.classifier_output:
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=0.5)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
         
         # Loss function
         if self.config.training.use_focal_loss:
@@ -213,17 +337,47 @@ class AttentionLSTMClassifier(pl.LightningModule):
         # 7. Feature fusion
         fused_features = self.fusion(combined)
         
-        # 8. Enhanced classification with residual connections
+        # ========================================================================
+        # 8. DEEP CLASSIFICATION HEAD with Multi-scale Residual + SE Attention
+        # ========================================================================
         x = fused_features
         
-        # Apply classifier layers with residual connections
-        for i, layer in enumerate(self.classifier_layers):
-            residual = x
-            x = layer(x)
-            # Add residual connection (skip connection)
-            x = x + residual
+        # Block 1: Input expansion + SE attention
+        residual = self.classifier_block1['residual'](x)
+        x = self.classifier_block1['main'](x)
+        se_weight = self.classifier_block1['se_attention'](x)
+        x = x * se_weight  # Apply SE attention
+        x = x + residual  # Residual connection
         
-        # Final classification (output logits, not probabilities)
+        # Block 2: Deep refinement + SE attention (same dimension)
+        residual = x
+        x = self.classifier_block2['main'](x)
+        se_weight = self.classifier_block2['se_attention'](x)
+        x = x * se_weight
+        x = x + residual
+        
+        # Block 3: Dimensionality reduction + SE attention
+        residual = self.classifier_block3['residual'](x)
+        x = self.classifier_block3['main'](x)
+        se_weight = self.classifier_block3['se_attention'](x)
+        x = x * se_weight
+        x = x + residual
+        
+        # Block 4: Further refinement + SE attention
+        residual = self.classifier_block4['residual'](x)
+        x = self.classifier_block4['main'](x)
+        se_weight = self.classifier_block4['se_attention'](x)
+        x = x * se_weight
+        x = x + residual
+        
+        # Block 5: Final refinement + SE attention (same dimension)
+        residual = x
+        x = self.classifier_block5['main'](x)
+        se_weight = self.classifier_block5['se_attention'](x)
+        x = x * se_weight
+        x = x + residual
+        
+        # Final projection to class logits
         logits = self.classifier_output(x)
         
         return logits, attention_weights

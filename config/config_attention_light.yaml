@@ -29,7 +29,7 @@ model:
   attention_dim: 128     # Minimal attention
   
   # Feature fusion
-  fusion_hidden_size: 256  # Minimal fusion layer
+  fusion_hidden_size: 512  # Minimal fusion layer
 
 # Training configuration
 training:
