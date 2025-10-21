@@ -420,11 +420,7 @@ def main(config: DictConfig):
     print(f"✓ Training samples: {len(train_idx)}")
     print(f"✓ Validation samples: {len(val_idx)}")
 
-    hyperparams_save_path = os.path.join(config.paths.logs_dir, "config.yaml")
-    os.makedirs(config.paths.logs_dir, exist_ok=True)
-    with open(hyperparams_save_path, "w") as f:
-        OmegaConf.save(config, f)
-    print(f"✓ Saved hyperparameters to {hyperparams_save_path}")
+    
     
     # ========================================================================
     # 6. INITIALIZE MODEL AND CALLBACKS
@@ -535,6 +531,12 @@ def main(config: DictConfig):
         save_dir=config.paths.logs_dir,
         name=model_name
     )
+    # Save hyperparameters/config into the specific TensorBoard run directory
+    hyperparams_save_path = os.path.join(config.paths.logs_dir , model_name, "config.yaml")
+    os.makedirs(hyperparams_save_path, exist_ok=True)
+    with open(hyperparams_save_path, "w") as f:
+        OmegaConf.save(config, f)
+    print(f"✓ Saved hyperparameters to {hyperparams_save_path}")
     
     print(f"✓ Callbacks configured:")
     print(f"  - ModelCheckpoint (monitor: {config.training.checkpoint.monitor})")
