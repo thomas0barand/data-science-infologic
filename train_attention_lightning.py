@@ -532,11 +532,11 @@ def main(config: DictConfig):
         name=model_name
     )
     # Save hyperparameters/config into the specific TensorBoard run directory
-    hyperparams_save_path = os.path.join(config.paths.logs_dir , model_name, "config.yaml")
+    hyperparams_save_path = os.path.join(config.paths.logs_dir , model_name)
     os.makedirs(hyperparams_save_path, exist_ok=True)
-    with open(hyperparams_save_path, "w") as f:
+    with open(hyperparams_save_path+"config.yaml", "w") as f:
         OmegaConf.save(config, f)
-    print(f"✓ Saved hyperparameters to {hyperparams_save_path}")
+    print(f"✓ Saved hyperparameters to {hyperparams_save_path}/config.yaml")
     
     print(f"✓ Callbacks configured:")
     print(f"  - ModelCheckpoint (monitor: {config.training.checkpoint.monitor})")
