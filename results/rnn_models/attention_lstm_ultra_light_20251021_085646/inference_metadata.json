@@ -1,0 +1,13 @@
+{
+  "vocab_size": 3968,
+  "num_users": 247,
+  "stat_feature_dim": 22,
+  "max_sequence_length": 1000,
+  "saved_at": "2025-10-21 08:56:47",
+  "artifacts": {
+    "vocabulary": "artifacts/vocabulary.joblib",
+    "user_categories": "artifacts/user_categories.joblib",
+    "stat_scaler": "artifacts/stat_scaler.joblib",
+    "config": "config.yaml"
+  }
+}

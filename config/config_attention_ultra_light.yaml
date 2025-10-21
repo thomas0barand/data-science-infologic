@@ -1,0 +1,106 @@
+# Hydra Configuration for Attention-LSTM User Identification
+# LIGHT MODEL: Fast training for local development on full dataset
+# Goal: Quick iterations with reasonable performance and minimal resource usage
+
+# Random seed for reproducibility
+seed: 42
+
+# Data configuration
+data:
+  train_path: "train"
+  test_path: "test"
+  data_dir: "data"
+  size: "full"          # Full dataset
+  max_sequence_length: 1000  # Reduced for faster processing
+  train_split: 0.8
+  batch_size: 64        # Large batch for efficiency
+  num_workers: 7        # Optimized for local CPU
+
+# Model architecture - LIGHT CONFIGURATION
+model:
+  # Embedding and LSTM - SMALL DIMENSIONS
+  embedding_dim: 32     # Minimal embedding
+  hidden_size: 64      # Small hidden size
+  num_layers: 1         # Single layer for speed
+  dropout: 0.2          # Light dropout
+  bidirectional: false  # Unidirectional for speed
+  
+  # Attention mechanism
+  attention_dim: 64     # Minimal attention
+  
+  # Feature fusion
+  fusion_hidden_size: 256  # Minimal fusion layer
+
+# Training configuration
+training:
+  max_epochs: 20        # Fewer epochs for speed
+  accelerator: "auto"
+  devices: 1
+  precision: "32"
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  
+  # Loss function
+  use_focal_loss: false
+  use_class_weights: true
+  
+  # Focal loss parameters
+  focal_loss:
+    gamma: 2.0
+    alpha_mode: "balanced"
+  
+  # Early stopping - More aggressive
+  early_stopping:
+    monitor: "val_f1"
+    patience: 8         # Less patience for faster stopping
+    mode: "max"
+    min_delta: 0.001
+  
+  # Checkpointing
+  checkpoint:
+    monitor: "val_f1"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "epoch={epoch:02d}-val_f1={val_f1:.4f}"
+
+# Optimizer configuration
+optimizer:
+  name: "adam"
+  lr: 0.001            # Higher learning rate for faster convergence
+  weight_decay: 0.0001 # Light weight decay
+
+# Learning rate scheduler
+scheduler:
+  name: "reduce_on_plateau"
+  
+  reduce_on_plateau:
+    monitor: "val_f1"
+    factor: 0.5
+    patience: 4         # More aggressive reduction
+    min_lr: 0.00001
+    mode: "max"
+  
+  cosine:
+    T_max: 10
+    eta_min: 0.00001
+  
+  step:
+    step_size: 5
+    gamma: 0.5
+
+# Paths for saving results - Local paths
+paths:
+  output_dir: "/content/drive/MyDrive/data-science-infologic/results/rnn_models"
+  logs_dir: "/content/drive/MyDrive/data-science-infologic/logs"
+  metrics_dir: "/content/drive/MyDrive/data-science-infologic/results/metrics"
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  job:
+    chdir: false
+
+cache:
+  cache_dir: "/content/drive/MyDrive/data-science-infologic/cache"
