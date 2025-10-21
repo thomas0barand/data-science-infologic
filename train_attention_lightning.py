@@ -540,8 +540,8 @@ def main(config: DictConfig):
     # 7. TRAIN MODEL
     # ========================================================================
     # Save hyperparameters/config to YAML in the output directory
-    hyperparams_save_path = os.path.join(config.paths.output_dir, "hyperparameters.yaml")
-    os.makedirs(config.paths.output_dir, exist_ok=True)
+    hyperparams_save_path = os.path.join(config.paths.output_dir, "config.yaml")
+    os.makedirs(config.paths.logs_dir, exist_ok=True)
     with open(hyperparams_save_path, "w") as f:
         OmegaConf.save(config, f)
     print(f"✓ Saved hyperparameters to {hyperparams_save_path}")
