@@ -95,18 +95,39 @@ def create_data_loaders_with_features(sequences, browser_features, stat_features
     """
     # Check if stratified splitting is possible
     class_counts = Counter(targets)
+    num_classes = len(class_counts)
     min_class_count = min(class_counts.values())
     use_stratify = min_class_count >= 2
-    
+
     if not use_stratify:
         print(f"⚠️  Warning: {sum(1 for c in class_counts.values() if c < 2)} classes have < 2 samples.")
         print("   Using non-stratified split.")
-    
-    # Split data
-    indices = np.arange(len(sequences))
+
+    # Determine validation size as an absolute count to avoid tiny fractional issues
+    n_samples = len(sequences)
+    desired_val_count = int(round(n_samples * (1 - float(config.data.train_split))))
+
+    # Ensure at least 1 sample for validation and at least 1 for training
+    if desired_val_count < 1:
+        desired_val_count = 1
+    if n_samples - desired_val_count < 1:
+        desired_val_count = max(1, n_samples - 1)
+
+    # If stratified split is requested but the validation set would be smaller
+    # than the number of classes, disable stratification for near-100% training
+    if use_stratify and desired_val_count < num_classes:
+        print(
+            f"⚠️  Requested validation size ({desired_val_count}) is smaller than the number of "
+            f"classes ({num_classes}), which is invalid for stratified split."
+        )
+        print("   Disabling stratification to allow near-100% training.")
+        use_stratify = False
+
+    # Split data using absolute test_size to get an exact validation count
+    indices = np.arange(n_samples)
     train_idx, val_idx = train_test_split(
         indices,
-        test_size=(1 - config.data.train_split),
+        test_size=desired_val_count,
         random_state=config.seed,
         stratify=targets if use_stratify else None
     )
