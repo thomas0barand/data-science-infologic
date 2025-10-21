@@ -420,7 +420,7 @@ def main(config: DictConfig):
     print(f"✓ Training samples: {len(train_idx)}")
     print(f"✓ Validation samples: {len(val_idx)}")
 
-    hyperparams_save_path = os.path.join(config.paths.output_dir, "config.yaml")
+    hyperparams_save_path = os.path.join(config.paths.logs_dir, "config.yaml")
     os.makedirs(config.paths.logs_dir, exist_ok=True)
     with open(hyperparams_save_path, "w") as f:
         OmegaConf.save(config, f)
