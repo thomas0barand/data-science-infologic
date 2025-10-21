@@ -527,20 +527,27 @@ def main(config: DictConfig):
     print(f"✓ Total trainable parameters: {total_params:,}")
     
     # Setup callbacks
+    # If validation set is extremely small (near-100% train), monitor train loss instead
+    use_train_monitor = (1 - float(config.data.train_split)) <= 0.02 or len(val_idx) < 2
+    monitor_metric = 'train_loss' if use_train_monitor else config.training.checkpoint.monitor
+    monitor_mode = 'min' if use_train_monitor else config.training.checkpoint.mode
+
     checkpoint_callback = ModelCheckpoint(
         dirpath=output_dir,
         filename=config.training.checkpoint.filename,
-        monitor=config.training.checkpoint.monitor,
-        mode=config.training.checkpoint.mode,
+        monitor=monitor_metric,
+        mode=monitor_mode,
         save_top_k=config.training.checkpoint.save_top_k,
         save_last=config.training.checkpoint.save_last,
         verbose=True
     )
     
+    es_monitor_metric = 'train_loss' if use_train_monitor else config.training.early_stopping.monitor
+    es_monitor_mode = 'min' if use_train_monitor else config.training.early_stopping.mode
     early_stopping_callback = EarlyStopping(
-        monitor=config.training.early_stopping.monitor,
+        monitor=es_monitor_metric,
         patience=config.training.early_stopping.patience,
-        mode=config.training.early_stopping.mode,
+        mode=es_monitor_mode,
         min_delta=config.training.early_stopping.min_delta,
         verbose=True
     )
@@ -560,8 +567,8 @@ def main(config: DictConfig):
     print(f"✓ Saved hyperparameters to {hyperparams_save_path}/config.yaml")
     
     print(f"✓ Callbacks configured:")
-    print(f"  - ModelCheckpoint (monitor: {config.training.checkpoint.monitor})")
-    print(f"  - EarlyStopping (patience: {config.training.early_stopping.patience})")
+    print(f"  - ModelCheckpoint (monitor: {monitor_metric})")
+    print(f"  - EarlyStopping (monitor: {es_monitor_metric}, patience: {config.training.early_stopping.patience})")
     print(f"  - LearningRateMonitor")
     print(f"  - TensorBoardLogger")
     
