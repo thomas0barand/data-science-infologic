@@ -580,6 +580,13 @@ def main(config: DictConfig):
     # ========================================================================
     # POST-TRAINING: EVALUATION AND RESULTS
     # ========================================================================
+    # Save hyperparameters/config to YAML in the output directory
+    hyperparams_save_path = os.path.join(config.paths.output_dir, "hyperparameters.yaml")
+    os.makedirs(config.paths.output_dir, exist_ok=True)
+    with open(hyperparams_save_path, "w") as f:
+        OmegaConf.save(config, f)
+    print(f"✓ Saved hyperparameters to {hyperparams_save_path}")
+    
     print("\n" + "=" * 80)
     print("Training completed!")
     print("=" * 80)
