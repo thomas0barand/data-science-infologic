@@ -1,0 +1,82 @@
+{
+  "timestamp": "2025-10-31 19:21:43",
+  "model_name": "attention_lstm_light_20251020_102622",
+  "config": {
+    "model": {
+      "embedding_dim": 96,
+      "hidden_size": 128,
+      "num_layers": 1,
+      "dropout": 0.2,
+      "bidirectional": false,
+      "attention_dim": 128,
+      "fusion_hidden_size": 512
+    },
+    "data": {
+      "max_sequence_length": 2000,
+      "batch_size": 64
+    },
+    "training": {
+      "use_focal_loss": false,
+      "use_class_weights": true
+    },
+    "optimizer": {
+      "name": "adam",
+      "lr": 0.001,
+      "weight_decay": 0.0001
+    },
+    "scheduler": {
+      "name": "reduce_on_plateau",
+      "reduce_on_plateau": {
+        "monitor": "val_f1",
+        "factor": 0.5,
+        "patience": 4,
+        "min_lr": 1e-05,
+        "mode": "max"
+      }
+    }
+  },
+  "data": {
+    "vocab_size": 3968,
+    "num_users": 247,
+    "max_sequence_length": 2000,
+    "data_size": "full"
+  },
+  "architecture": {
+    "model_type": "Attention-LSTM",
+    "embedding_dim": 96,
+    "hidden_size": 128,
+    "num_layers": 1,
+    "dropout": 0.2,
+    "bidirectional": false,
+    "attention_dim": 128,
+    "fusion_hidden_size": 512,
+    "use_focal_loss": false
+  },
+  "training": {
+    "optimizer": "adam",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "scheduler": "reduce_on_plateau",
+    "max_epochs": 200,
+    "batch_size": 64
+  },
+  "metrics": {
+    "train": {
+      "accuracy": 0.9600487953644404,
+      "f1_weighted": 0.9586747271292434,
+      "f1_macro": 0.9602065017708374,
+      "precision": 0.9645140898309578,
+      "recall": 0.9600487953644404
+    },
+    "val": {
+      "accuracy": 0.8623220783049492,
+      "f1_weighted": 0.8592736996664905,
+      "f1_macro": 0.862835677642469,
+      "precision": 0.8654922710348026,
+      "recall": 0.8623220783049492
+    }
+  },
+  "checkpoint": {
+    "best_model_path": "results/models/attention_lstm_light_20251020_102622/epoch=epoch=149-val_f1=val_f1=0.8628.ckpt"
+  }
+}
