@@ -8,8 +8,8 @@ import os
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, classification_report
-from utils import load_data, clean_data, prepare_training_data, prepare_test_data
-from model_manager import ModelManager, save_model_results
+from utils.utils import load_data, clean_data, prepare_training_data, prepare_test_data, ModelManager, save_model_results
+# from model_manager import ModelManager, save_model_results
 
 
 def main():

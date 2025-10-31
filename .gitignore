@@ -5,3 +5,20 @@ logs/
 models/
 __pycache__/
 cache/
+logs/
+
+##Transformer files
+results/transformer_models/
+train_transformer.py
+transformer_lightning.py
+inference_transformer.py
+
+submissions/
+LONG_SEQUENCE_HANDLING.md
+
+
+# Simple RNN models
+results/rnn_models/
+rnn_model.py
+rnn_lightning.py
+rnn_attention_simple.py

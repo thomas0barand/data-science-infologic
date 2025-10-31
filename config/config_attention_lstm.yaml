@@ -11,7 +11,7 @@ data:
   test_path: "test"
   data_dir: "data"
   size: "full"          # Full dataset
-  max_sequence_length: 1000  # Reduced for faster processing
+  max_sequence_length: 100  # Reduced for faster processing
   train_split: 0.8
   batch_size: 64        # Large batch for efficiency
   num_workers: 7        # Optimized for local CPU
@@ -19,21 +19,21 @@ data:
 # Model architecture - LIGHT CONFIGURATION
 model:
   # Embedding and LSTM - SMALL DIMENSIONS
-  embedding_dim: 32     # Minimal embedding
-  hidden_size: 64      # Small hidden size
+  embedding_dim: 16     # Minimal embedding
+  hidden_size: 32      # Small hidden size
   num_layers: 1         # Single layer for speed
   dropout: 0.2          # Light dropout
   bidirectional: false  # Unidirectional for speed
   
   # Attention mechanism
-  attention_dim: 64     # Minimal attention
+  attention_dim: 32     # Minimal attention
   
   # Feature fusion
-  fusion_hidden_size: 256  # Minimal fusion layer
+  fusion_hidden_size: 128  # Minimal fusion layer
 
 # Training configuration
 training:
-  max_epochs: 20        # Fewer epochs for speed
+  max_epochs: 2        # Fewer epochs for speed
   accelerator: "auto"
   devices: 1
   precision: "32"
@@ -52,7 +52,7 @@ training:
   # Early stopping - More aggressive
   early_stopping:
     monitor: "val_f1"
-    patience: 8         # Less patience for faster stopping
+    patience: 1         # Less patience for faster stopping
     mode: "max"
     min_delta: 0.001
   
@@ -91,7 +91,7 @@ scheduler:
 
 # Paths for saving results - Local paths
 paths:
-  output_dir: "results/rnn_models"
+  output_dir: "results/models"
   logs_dir: "logs"
   metrics_dir: "results/metrics"
 

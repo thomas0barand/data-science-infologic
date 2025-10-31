@@ -1,6 +1,6 @@
 {
-  "model_name": "logistic_regression_20251014_103523",
-  "timestamp": "2025-10-14T10:35:23.889996",
+  "model_name": "logistic_regression_20251031_161922",
+  "timestamp": "2025-10-31T16:19:22.238831",
   "train_metrics": {
     "accuracy": 0.7003431185665269,
     "f1_score": 0.7065138375407308,

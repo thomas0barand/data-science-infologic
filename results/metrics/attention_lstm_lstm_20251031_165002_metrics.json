@@ -1,0 +1,128 @@
+{
+  "timestamp": "2025-10-31 16:54:10",
+  "model_name": "attention_lstm_lstm_20251031_165002",
+  "config": {
+    "seed": 42,
+    "data": {
+      "train_path": "train",
+      "test_path": "test",
+      "data_dir": "data",
+      "size": "full",
+      "max_sequence_length": 100,
+      "train_split": 0.8,
+      "batch_size": 64,
+      "num_workers": 7
+    },
+    "model": {
+      "embedding_dim": 16,
+      "hidden_size": 32,
+      "num_layers": 1,
+      "dropout": 0.2,
+      "bidirectional": false,
+      "attention_dim": 32,
+      "fusion_hidden_size": 128
+    },
+    "training": {
+      "max_epochs": 2,
+      "accelerator": "auto",
+      "devices": 1,
+      "precision": "32",
+      "gradient_clip_val": 1.0,
+      "accumulate_grad_batches": 1,
+      "use_focal_loss": false,
+      "use_class_weights": true,
+      "focal_loss": {
+        "gamma": 2.0,
+        "alpha_mode": "balanced"
+      },
+      "early_stopping": {
+        "monitor": "val_f1",
+        "patience": 1,
+        "mode": "max",
+        "min_delta": 0.001
+      },
+      "checkpoint": {
+        "monitor": "val_f1",
+        "mode": "max",
+        "save_top_k": 1,
+        "save_last": true,
+        "filename": "epoch={epoch:02d}-val_f1={val_f1:.4f}"
+      }
+    },
+    "optimizer": {
+      "name": "adam",
+      "lr": 0.001,
+      "weight_decay": 0.0001
+    },
+    "scheduler": {
+      "name": "reduce_on_plateau",
+      "reduce_on_plateau": {
+        "monitor": "val_f1",
+        "factor": 0.5,
+        "patience": 4,
+        "min_lr": 1e-05,
+        "mode": "max"
+      },
+      "cosine": {
+        "T_max": 10,
+        "eta_min": 1e-05
+      },
+      "step": {
+        "step_size": 5,
+        "gamma": 0.5
+      }
+    },
+    "paths": {
+      "output_dir": "results/rnn_models",
+      "logs_dir": "logs",
+      "metrics_dir": "results/metrics"
+    },
+    "cache": {
+      "cache_dir": "cache"
+    }
+  },
+  "data": {
+    "vocab_size": 3968,
+    "num_users": 247,
+    "max_sequence_length": 100,
+    "data_size": "full"
+  },
+  "architecture": {
+    "model_type": "Attention-LSTM",
+    "embedding_dim": 16,
+    "hidden_size": 32,
+    "num_layers": 1,
+    "dropout": 0.2,
+    "bidirectional": false,
+    "attention_dim": 32,
+    "fusion_hidden_size": 128,
+    "use_focal_loss": false
+  },
+  "training": {
+    "optimizer": "adam",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "scheduler": "reduce_on_plateau",
+    "max_epochs": 2,
+    "batch_size": 64
+  },
+  "metrics": {
+    "train": {
+      "accuracy": 0.013343499809378575,
+      "f1_weighted": 0.0019074294870164929,
+      "f1_macro": 0.001118481043623426,
+      "precision": 0.0018178775479385481,
+      "recall": 0.013343499809378575
+    },
+    "validation": {
+      "accuracy": 0.021341463414634148,
+      "f1_weighted": 0.0028915466512639187,
+      "f1_macro": 0.0010733201254861382,
+      "precision": 0.0016332074061984215,
+      "recall": 0.021341463414634148
+    }
+  },
+  "checkpoint": {
+    "best_model_path": "/Users/thomas/Documents/Projects/data-science-infologic/results/rnn_models/attention_lstm_lstm_20251031_165002/epoch=epoch=01-val_f1=val_f1=0.0057.ckpt"
+  }
+}

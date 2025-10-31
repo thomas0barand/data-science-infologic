@@ -38,12 +38,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from collections import Counter
 
-from utils import (
+from utils.utils import (
     load_data, clean_data, tokenize_actions, 
     prepare_rnn_sequences, extract_statistical_features
 )
-from rnn_attention_lightning import AttentionLSTMClassifier
-from cache_utils import (
+from model.attention_lstm import AttentionLSTMClassifier
+from utils.cache_utils import (
     get_cache_paths, check_cache_complete, print_cache_info,
     load_stage1_cache, save_stage1_cache,
     load_stage2_cache, save_stage2_cache,
@@ -277,7 +277,7 @@ _CONFIG_NAME = None
 _FORCE_FRESH = False
 
 
-@hydra.main(version_base=None, config_path="config", config_name="config_attention")
+@hydra.main(version_base=None, config_path="../config", config_name="config_attention_lstm")
 def main(config: DictConfig):
     """
     Main training function with Hydra configuration.
