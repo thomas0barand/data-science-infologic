@@ -27,4 +27,10 @@ rnn_attention_simple.py
 
 # Ignore all files in config/ except config_attention_lstm.yaml
 config/*
-!config/config_attention_lstm.yaml
+
+# Ignore all files into the folders
+training/*
+training/*/*
+!traing/model
+!training/utils
+results/*/*
