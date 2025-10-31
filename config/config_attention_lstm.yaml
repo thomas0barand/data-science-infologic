@@ -1,6 +1,5 @@
 # Hydra Configuration for Attention-LSTM User Identification
-# LIGHT MODEL: Fast training for local development on full dataset
-# Goal: Quick iterations with reasonable performance and minimal resource usage
+# Config that achieve the best performance : f1-score = 0.849 on test
 
 # Random seed for reproducibility
 seed: 42
@@ -11,7 +10,7 @@ data:
   test_path: "test"
   data_dir: "data"
   size: "full"          # Full dataset
-  max_sequence_length: 100  # Reduced for faster processing
+  max_sequence_length: 3000  # Reduced for faster processing
   train_split: 0.8
   batch_size: 64        # Large batch for efficiency
   num_workers: 7        # Optimized for local CPU
@@ -19,21 +18,21 @@ data:
 # Model architecture - LIGHT CONFIGURATION
 model:
   # Embedding and LSTM - SMALL DIMENSIONS
-  embedding_dim: 16     # Minimal embedding
-  hidden_size: 32      # Small hidden size
+  embedding_dim: 128     # Minimal embedding
+  hidden_size: 256      # Small hidden size
   num_layers: 1         # Single layer for speed
   dropout: 0.2          # Light dropout
   bidirectional: false  # Unidirectional for speed
   
   # Attention mechanism
-  attention_dim: 32     # Minimal attention
+  attention_dim: 128     
   
   # Feature fusion
-  fusion_hidden_size: 128  # Minimal fusion layer
+  fusion_hidden_size: 256 
 
 # Training configuration
 training:
-  max_epochs: 2        # Fewer epochs for speed
+  max_epochs: 200      
   accelerator: "auto"
   devices: 1
   precision: "32"
@@ -52,7 +51,7 @@ training:
   # Early stopping - More aggressive
   early_stopping:
     monitor: "val_f1"
-    patience: 1         # Less patience for faster stopping
+    patience: 20        # Less patience for faster stopping
     mode: "max"
     min_delta: 0.001
   

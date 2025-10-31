@@ -22,12 +22,12 @@ from tqdm import tqdm
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
-from utils import (
+from utils.utils import (
     load_data, clean_data, tokenize_actions, 
     prepare_rnn_sequences, extract_statistical_features
 )
-from rnn_attention_lightning import AttentionLSTMClassifier
-from rnn_attention_simple import AttentionLSTMClassifierSimple
+from model.attention_lstm import AttentionLSTMClassifier
+# from rnn_attention_simple import AttentionLSTMClassifierSimple
 
 
 def regenerate_artifacts(train_path, data_dir):
@@ -186,7 +186,7 @@ def load_model_and_artifacts(checkpoint_path, train_data_path=None, data_dir='da
             fusion_hidden_size=config.model.fusion_hidden_size
         )
     elif has_complex_classifier:
-        print(f"✓ Detected COMPLEX classifier architecture")
+        print(f"✓ Detected classifier architecture")
         # Use complex architecture
         model = AttentionLSTMClassifier(
             config=config,

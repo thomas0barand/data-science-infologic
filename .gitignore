@@ -14,6 +14,7 @@ train_transformer_lightning.py
 transformer_lightning.py
 inference_transformer.py
 
+#Other
 submissions/
 LONG_SEQUENCE_HANDLING.md
 
@@ -23,3 +24,7 @@ results/rnn_models/
 rnn_model.py
 rnn_lightning.py
 rnn_attention_simple.py
+
+# Ignore all files in config/ except config_attention_lstm.yaml
+config/*
+!config/config_attention_lstm.yaml
