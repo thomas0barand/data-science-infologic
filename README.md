@@ -35,6 +35,7 @@ git checkout thomas
 
 2. **Install dependencies and activate environment**:
    ```bash
+   poetry lock
    poetry install
    poetry shell
    ```
