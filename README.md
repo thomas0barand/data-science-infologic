@@ -61,13 +61,14 @@ git checkout thomas
 data-science-infologic/
 ├── config/                    # Hydra configuration files
 │   ├── config_attention_lstm.yaml
+│   ├── config_attention_lstm_light_20251020.yaml  # Config for attention_lstm_light_20251020_102622
 │   ├── config_attention_ultra_light.yaml
 │   ├── config_attention_light.yaml
 │   └── ... (other config variants)
 ├── training/                  # Training scripts
 │   ├── train_logistic.py     # Logistic Regression training
 │   ├── train_attention_lstm.py  # Attention-LSTM training
-│   ├── inference_attention_lstm.py  # Inference script
+│   ├── inference_attention_lstm.py  # Inference and evaluation script
 │   ├── model/                # Model architectures
 │   │   └── attention_lstm.py
 │   └── utils/                # Utilities
@@ -249,32 +250,42 @@ Raw Data → Clean → Tokenize → Sequence Prep → Feature Fusion → Train L
 
 ## Inference and Submission Generation
 
-### Attention-LSTM Inference
+### Attention-LSTM Inference (`inference_attention_lstm.py`)
 
-Generate predictions on test data and create submission file:
+This script can evaluate a checkpoint on the training dataset to compute metrics, and optionally generate submission.csv from test data:
 
 ```bash
+# Evaluate on train dataset only (generates metrics JSON)
 python training/inference_attention_lstm.py \
-    --checkpoint results/models/attention_lstm_lstm_YYYYMMDD_HHMMSS/best.ckpt \
-    --output submission.csv
+    --checkpoint results/models/attention_lstm_light_20251020_102622/epoch=epoch=149-val_f1=val_f1=0.8628.ckpt
+
+# Evaluate on train dataset AND generate submission.csv from test data
+python training/inference_attention_lstm.py \
+    --checkpoint results/models/attention_lstm_light_20251020_102622/epoch=epoch=149-val_f1=val_f1=0.8628.ckpt \
+    --test-path test \
+    --submission submission.csv
 ```
 
 **Parameters:**
-- `--checkpoint` or `-c`: Path to model checkpoint (.ckpt file)
-- `--output` or `-o`: Output submission file path (default: `submission.csv`)
-- `--test-path`: Test data path (default: `test`)
+- `--checkpoint` or `-c`: Path to model checkpoint (.ckpt file) [required]
+- `--train-path`: Training data path (default: `train`)
+- `--test-path`: Test data path for generating submission.csv (optional)
 - `--data-dir`: Data directory (default: `data`)
 - `--batch-size`: Batch size for inference (default: 64)
-- `--train-path`: Training data path (for regenerating artifacts if missing)
+- `--output` or `-o`: Output path for metrics JSON (default: auto-generated)
+- `--submission` or `-s`: Output path for submission.csv (only used if `--test-path` is provided, default: `submission.csv`)
 
 **What it does:**
 1. Loads trained model from checkpoint
-2. Loads artifacts (vocabulary, user categories, scaler) from checkpoint directory
-3. If artifacts missing, regenerates them from training data
-4. Prepares test data (sequences + statistical features + browser features)
-5. Generates predictions for all test samples
-6. Maps predictions back to user IDs
-7. Creates submission CSV file in the required format
+2. Reconstructs config from checkpoint if config.yaml is missing
+3. Regenerates artifacts (vocabulary, user categories, scaler) if missing
+4. Runs inference on training dataset and computes metrics:
+   - Accuracy
+   - F1 Score (macro and weighted)
+   - Precision (weighted)
+   - Recall (weighted)
+5. Saves metrics to JSON file in the same format as training script output
+6. Optionally generates submission.csv from test data if `--test-path` is provided
 
 **Example:**
 ```bash
