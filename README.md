@@ -19,9 +19,9 @@ This repository uses a **multi-branch architecture** where each branch contains 
 | Branch | Contributor | Models | Additional Contributions | Contents |
 |--------|-------------|--------|-------------------------|----------|
 | `main` | - | All models | - | Models, metrics, submissions, data |
-| `thomas` | Thomas | Logistic Regression, LSTM + Attention | Preprocessing data (tokenization + statistical features) | Training scripts, code, configs |
-| `danylo_branch` | Dan | XGBoost, Random Forest | Visualization and EDA | Training scripts, code, configs |
-| `anna` | Anna | Decision Tree, SVM | EDA and documentation | Training scripts, code, configs |
+| `thomas` | Thomas Barand | Logistic Regression, LSTM + Attention | Preprocessing data (tokenization + statistical features) | Training scripts, code, configs |
+| `danylo_branch` | Danylo Mazurak | XGBoost, Random Forest | Visualization and EDA | Training scripts, code, configs |
+| `anna` | Anna Samsonenko | Decision Tree, SVM | EDA and documentation | Training scripts, code, configs |
 
 **Important**: The `main` branch contains only trained models, metrics, submissions, and data. Each development branch (`thomas`, `dan`, `anna`) is self-contained with its own training scripts, configurations, and documentation. To train a specific model, you must switch to the corresponding branch.
 
